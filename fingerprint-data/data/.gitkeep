@@ -1,0 +1,3 @@
+# fingerprint-data/data/
+# Network ZIP files are stored here and embedded at compile time via include_bytes!
+# See Story 2.1: 2-1-embed-zip-build-rs.md for instructions on obtaining the ZIPs.

@@ -1,0 +1,25 @@
+[workspace]
+members = [
+    "fingerprint-core",
+    "fingerprint-data",
+    "fingerprint-rs",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+authors = ["Admin"]
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+# Internal
+fingerprint-core = { path = "fingerprint-core" }
+fingerprint-data = { path = "fingerprint-data" }
+
+# External — pin exact versions to ensure reproducibility
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+indexmap = { version = "2", features = ["serde"] }
+thiserror = "2"

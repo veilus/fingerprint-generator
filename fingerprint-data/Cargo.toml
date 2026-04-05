@@ -1,0 +1,14 @@
+[package]
+name = "fingerprint-data"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+fingerprint-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+zip = "2"
+
+[build-dependencies]
+zip = "2"
