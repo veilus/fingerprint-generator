@@ -11,7 +11,7 @@
 //! cargo run --example full_output -p fingerprint-rs
 //! ```
 
-use fingerprint_rs::FingerprintGenerator;
+use veilus_fingerprint::FingerprintGenerator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let profile = FingerprintGenerator::new()

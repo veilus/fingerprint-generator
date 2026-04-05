@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use fingerprint_core::{
+use veilus_fingerprint_core::{
     AudioCodecs, Battery, BrandVersion, BrowserFamily, BrowserFingerprint, BrowserInfo,
     BrowserProfile, DeviceType, ExtraProperties, FingerprintError, HttpHeaders,
     MultimediaDevices, NavigatorFingerprint, OperatingSystem, OsFamily, PluginsData,
     ScreenFingerprint, UserAgentData, VideoCard, VideoCodecs,
 };
-use fingerprint_data::network::STRINGIFIED_PREFIX;
-use fingerprint_data::DATASET_VERSION;
+use veilus_fingerprint_data::network::STRINGIFIED_PREFIX;
+use veilus_fingerprint_data::DATASET_VERSION;
 use rand::{Rng, RngCore};
 
 // ── Parse helpers ──────────────────────────────────────────────────────────
@@ -22,7 +22,7 @@ fn parse_stringified<T: serde::de::DeserializeOwned>(raw: &str) -> Option<T> {
 /// Get optional field, stripping `*MISSING_VALUE*` sentinel.
 fn opt_field(map: &HashMap<String, String>, key: &str) -> Option<String> {
     map.get(key)
-        .filter(|v| v.as_str() != fingerprint_data::network::MISSING_VALUE)
+        .filter(|v| v.as_str() != veilus_fingerprint_data::network::MISSING_VALUE)
         .cloned()
 }
 
@@ -370,7 +370,7 @@ pub fn assemble_profile(
             continue;
         }
         // Skip MISSING_VALUE sentinels
-        if value == fingerprint_data::network::MISSING_VALUE {
+        if value == veilus_fingerprint_data::network::MISSING_VALUE {
             continue;
         }
         http_headers.insert(key.clone(), value.clone());

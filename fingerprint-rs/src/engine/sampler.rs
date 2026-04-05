@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use fingerprint_core::FingerprintError;
-use fingerprint_data::network::{BayesianNetwork, BayesianNode, CptNode, MISSING_VALUE};
+use veilus_fingerprint_core::FingerprintError;
+use veilus_fingerprint_data::network::{BayesianNetwork, BayesianNode, CptNode, MISSING_VALUE};
 use rand::Rng;
 
 // ─── Topological Sort (Kahn's Algorithm) ────────────────────────────────────
@@ -173,7 +173,7 @@ pub(crate) fn sample_from_probs(
 ///
 /// # Arguments
 ///
-/// * `network` — The parsed `BayesianNetwork` from [`fingerprint_data::loader`].
+/// * `network` — The parsed `BayesianNetwork` from [`veilus_fingerprint_data::loader`].
 /// * `rng` — Any RNG implementing [`rand::Rng`] (random or seeded).
 ///
 /// # Returns
@@ -226,7 +226,7 @@ pub fn missing_value() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fingerprint_data::loader::{get_fingerprint_network, get_header_network};
+    use veilus_fingerprint_data::loader::{get_fingerprint_network, get_header_network};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 

@@ -1,6 +1,6 @@
 use std::sync::OnceLock;
 
-use fingerprint_core::FingerprintError;
+use veilus_fingerprint_core::FingerprintError;
 
 use crate::network::BayesianNetwork;
 use crate::{FINGERPRINT_NETWORK_BYTES, HEADER_NETWORK_BYTES};

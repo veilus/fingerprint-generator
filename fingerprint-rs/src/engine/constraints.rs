@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use fingerprint_core::FingerprintError;
-use fingerprint_data::network::BayesianNetwork;
+use veilus_fingerprint_core::FingerprintError;
+use veilus_fingerprint_data::network::BayesianNetwork;
 use rand::Rng;
 
 use super::sampler::sample_ancestral;
@@ -80,7 +80,7 @@ pub fn sample_constrained(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use fingerprint_data::loader::{get_fingerprint_network, get_header_network};
+    use veilus_fingerprint_data::loader::{get_fingerprint_network, get_header_network};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
 

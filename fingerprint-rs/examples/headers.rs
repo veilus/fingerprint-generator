@@ -10,7 +10,7 @@
 //! cargo run --example headers -p fingerprint-rs
 //! ```
 
-use fingerprint_rs::{BrowserFamily, FingerprintGenerator, OsFamily};
+use veilus_fingerprint::{BrowserFamily, FingerprintGenerator, OsFamily};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╔══════════════════════════════════════════════════╗");

@@ -10,13 +10,18 @@ resolver = "2"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.75"
-authors = ["Admin"]
+authors = ["Veilus <veilusbrowser@gmail.com>"]
 license = "MIT OR Apache-2.0"
+repository = "https://github.com/veilus/fingerprint-generator"
+homepage = "https://github.com/veilus/fingerprint-generator"
+keywords = ["fingerprint", "browser", "scraping", "antidetect", "bayesian"]
+categories = ["web-programming", "simulation"]
+readme = "README.md"
 
 [workspace.dependencies]
 # Internal
-fingerprint-core = { path = "fingerprint-core" }
-fingerprint-data = { path = "fingerprint-data" }
+veilus-fingerprint-core = { path = "fingerprint-core", version = "0.1.0" }
+veilus-fingerprint-data = { path = "fingerprint-data", version = "0.1.0" }
 
 # External — pin exact versions to ensure reproducibility
 serde = { version = "1", features = ["derive"] }

@@ -9,7 +9,7 @@
 //! # Quick Start
 //!
 //! ```rust,ignore
-//! use fingerprint_rs::FingerprintGenerator;
+//! use veilus_fingerprint::FingerprintGenerator;
 //!
 //! // Random fingerprint
 //! let profile = FingerprintGenerator::random()?;
@@ -31,8 +31,8 @@ pub(crate) mod assembler;
 pub mod generator;
 
 pub use engine::{sample_ancestral, sample_constrained, Constraints};
-pub use fingerprint_core::FingerprintError;
-pub use fingerprint_core::{
+pub use veilus_fingerprint_core::FingerprintError;
+pub use veilus_fingerprint_core::{
     BrandVersion, BrowserFamily, BrowserFingerprint, BrowserInfo, BrowserProfile, DeviceType,
     HttpHeaders, NavigatorFingerprint, OperatingSystem, OsFamily, ScreenFingerprint, UserAgentData,
 };

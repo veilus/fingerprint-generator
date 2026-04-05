@@ -9,7 +9,7 @@
 //! cargo run --example extended -p fingerprint-rs
 //! ```
 
-use fingerprint_rs::FingerprintGenerator;
+use veilus_fingerprint::FingerprintGenerator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╔══════════════════════════════════════════════════╗");

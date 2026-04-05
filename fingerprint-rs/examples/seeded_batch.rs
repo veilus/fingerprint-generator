@@ -12,7 +12,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use fingerprint_rs::{BrowserFamily, FingerprintGenerator, OsFamily};
+use veilus_fingerprint::{BrowserFamily, FingerprintGenerator, OsFamily};
 
 /// Hash a string session ID into a stable u64 seed.
 fn session_seed(session_id: &str) -> u64 {

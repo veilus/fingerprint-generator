@@ -212,39 +212,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5baebc0774151f905a1a2cc41989300b1e6fbb29aff0ceffa1064fdd3088d582"
 
 [[package]]
-name = "fingerprint-core"
-version = "0.1.0"
-dependencies = [
- "indexmap",
- "serde",
- "serde_json",
- "thiserror",
-]
-
-[[package]]
-name = "fingerprint-data"
-version = "0.1.0"
-dependencies = [
- "fingerprint-core",
- "serde",
- "serde_json",
- "zip",
-]
-
-[[package]]
-name = "fingerprint-rs"
-version = "0.1.0"
-dependencies = [
- "fingerprint-core",
- "fingerprint-data",
- "rand",
- "rand_chacha",
- "serde",
- "serde_json",
- "tracing",
-]
-
-[[package]]
 name = "flate2"
 version = "1.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -673,6 +640,39 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
+
+[[package]]
+name = "veilus-fingerprint"
+version = "0.1.0"
+dependencies = [
+ "rand",
+ "rand_chacha",
+ "serde",
+ "serde_json",
+ "tracing",
+ "veilus-fingerprint-core",
+ "veilus-fingerprint-data",
+]
+
+[[package]]
+name = "veilus-fingerprint-core"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "veilus-fingerprint-data"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "veilus-fingerprint-core",
+ "zip",
+]
 
 [[package]]
 name = "version_check"

@@ -1,5 +1,5 @@
-use fingerprint_core::{BrowserFamily, BrowserProfile, FingerprintError, OsFamily};
-use fingerprint_data::loader::{get_fingerprint_network, get_header_network};
+use veilus_fingerprint_core::{BrowserFamily, BrowserProfile, FingerprintError, OsFamily};
+use veilus_fingerprint_data::loader::{get_fingerprint_network, get_header_network};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
@@ -22,7 +22,7 @@ const IMPOSSIBLE_COMBOS: &[(&str, &str)] = &[
 /// # Example
 ///
 /// ```rust,ignore
-/// use fingerprint_rs::{FingerprintGenerator, BrowserFamily, OsFamily};
+/// use veilus_fingerprint::{FingerprintGenerator, BrowserFamily, OsFamily};
 ///
 /// // Random fingerprint
 /// let profile = FingerprintGenerator::random()?;
@@ -359,7 +359,7 @@ mod tests {
         let profile = FingerprintGenerator::random().expect("must succeed");
         assert_eq!(
             profile.dataset_version,
-            fingerprint_data::DATASET_VERSION,
+            veilus_fingerprint_data::DATASET_VERSION,
             "dataset_version must match embedded constant"
         );
     }

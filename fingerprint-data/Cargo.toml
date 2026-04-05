@@ -1,11 +1,19 @@
 [package]
-name = "fingerprint-data"
+name = "veilus-fingerprint-data"
+description = "Embedded Bayesian network data for the veilus-fingerprint browser fingerprint generator"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 
 [dependencies]
-fingerprint-core = { workspace = true }
+veilus-fingerprint-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 zip = "2"

@@ -4,7 +4,7 @@ use std::io::{BufReader, Cursor, Read};
 use serde::{Deserialize, Serialize};
 use zip::ZipArchive;
 
-use fingerprint_core::FingerprintError;
+use veilus_fingerprint_core::FingerprintError;
 
 /// A value that a Bayesian network node can take.
 ///
@@ -226,7 +226,7 @@ mod tests {
         let err = BayesianNetwork::from_zip_bytes(b"not a zip");
         assert!(err.is_err());
         match err.unwrap_err() {
-            fingerprint_core::FingerprintError::NetworkParseError(_) => {}
+            veilus_fingerprint_core::FingerprintError::NetworkParseError(_) => {}
             other => panic!("Expected NetworkParseError, got {other:?}"),
         }
     }

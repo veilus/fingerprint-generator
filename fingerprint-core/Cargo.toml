@@ -1,8 +1,16 @@
 [package]
-name = "fingerprint-core"
+name = "veilus-fingerprint-core"
+description = "Shared types and errors for the veilus-fingerprint browser fingerprint generator"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+categories.workspace = true
+readme.workspace = true
 
 [dependencies]
 serde = { workspace = true }

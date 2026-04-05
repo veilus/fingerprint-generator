@@ -1,7 +1,9 @@
-# fingerprint-rs
+# veilus-fingerprint
 
+[![crates.io](https://img.shields.io/crates/v/veilus-fingerprint.svg)](https://crates.io/crates/veilus-fingerprint)
+[![docs.rs](https://docs.rs/veilus-fingerprint/badge.svg)](https://docs.rs/veilus-fingerprint)
 [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](https://www.rust-lang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: MIT/Apache-2.0](https://img.shields.io/crates/l/veilus-fingerprint.svg)](LICENSE-MIT)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
 
 **A high-performance Rust library for generating statistically realistic browser fingerprints and HTTP headers** — built on Bayesian networks trained on real-world browser data.
@@ -31,7 +33,7 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-fingerprint-rs = { git = "https://github.com/AstraSurge/fingerprint-generator" }
+veilus-fingerprint = "0.1"
 ```
 
 ---
@@ -39,7 +41,7 @@ fingerprint-rs = { git = "https://github.com/AstraSurge/fingerprint-generator" }
 ## 🚀 Quick Start
 
 ```rust
-use fingerprint_rs::{BrowserFamily, FingerprintGenerator, OsFamily};
+use veilus_fingerprint::{BrowserFamily, FingerprintGenerator, OsFamily};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Random fingerprint — one line
@@ -173,7 +175,7 @@ pub struct UserAgentData {
 ## 📋 Full JSON Output Example
 
 ```bash
-cargo run --example full_output -p fingerprint-rs
+cargo run --example full_output -p veilus-fingerprint
 ```
 
 <details>
@@ -293,7 +295,7 @@ cargo run --example full_output -p fingerprint-rs
 ### Generate HTTP Headers Only
 
 ```rust
-use fingerprint_rs::{BrowserFamily, FingerprintGenerator};
+use veilus_fingerprint::{BrowserFamily, FingerprintGenerator};
 
 let profile = FingerprintGenerator::new()
     .browser(BrowserFamily::Chrome)
@@ -361,7 +363,7 @@ let profile = FingerprintGenerator::new()
 ### Strict Mode & Error Handling
 
 ```rust
-use fingerprint_rs::FingerprintError;
+use veilus_fingerprint::FingerprintError;
 
 match FingerprintGenerator::new()
     .browser(BrowserFamily::Safari)
@@ -394,7 +396,7 @@ match FingerprintGenerator::new()
 Run any example with:
 
 ```bash
-cargo run --example <name> -p fingerprint-rs
+cargo run --example <name> -p veilus-fingerprint
 ```
 
 | Example | Description | browserforge equivalent |
@@ -420,10 +422,10 @@ Benchmarked on Apple M-series (release build):
 | Warm (constrained Chrome+Windows) | **~181µs/call** → 5,500+ fps |
 
 ```bash
-cargo run --release --example benchmark -p fingerprint-rs
+cargo run --release --example benchmark -p veilus-fingerprint
 ```
 
-> **Comparison**: browserforge (Python) reports 0.1–0.2ms per generation. fingerprint-rs matches or exceeds this performance while running in pure Rust with zero FFI overhead.
+> **Comparison**: browserforge (Python) reports 0.1–0.2ms per generation. veilus-fingerprint matches or exceeds this performance while running in pure Rust with zero FFI overhead.
 
 ---
 
@@ -448,7 +450,7 @@ fingerprint-generator/               ← Cargo workspace root
 
 ### Dual-Network Architecture
 
-fingerprint-rs uses **two independent Bayesian networks**:
+veilus-fingerprint uses **two independent Bayesian networks**:
 
 1. **Header Network** — generates realistic HTTP headers, browser family, OS, and device type. Constraints (browser, OS) are applied here via rejection sampling.
 2. **Fingerprint Network** — generates JavaScript API values (navigator, screen, WebGL, codecs, etc.). Sampled independently from the header network.
@@ -460,7 +462,7 @@ The assembler then **merges** outputs from both networks into a coherent `Browse
 Access the Bayesian network and sampler directly for custom use cases:
 
 ```rust
-use fingerprint_rs::{sample_ancestral, sample_constrained, Constraints};
+use veilus_fingerprint::{sample_ancestral, sample_constrained, Constraints};
 use fingerprint_data::loader::get_header_network;
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -481,7 +483,7 @@ let assignment = sample_constrained(network, &constraints, &mut rng)?;
 
 ## 🔍 browserforge Feature Parity
 
-| Feature | browserforge (Python) | fingerprint-rs (Rust) |
+| Feature | browserforge (Python) | veilus-fingerprint (Rust) |
 |---------|----------------------|----------------------|
 | Navigator (UA, platform, vendor) | ✅ | ✅ |
 | HTTP Headers (ordered) | ✅ | ✅ |

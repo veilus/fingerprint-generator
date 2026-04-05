@@ -12,7 +12,7 @@
 
 use std::time::Instant;
 
-use fingerprint_rs::FingerprintGenerator;
+use veilus_fingerprint::FingerprintGenerator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╔══════════════════════════════════════════════════╗");
@@ -47,8 +47,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let start = Instant::now();
     for i in 0..n {
         let _profile = FingerprintGenerator::new()
-            .browser(fingerprint_rs::BrowserFamily::Chrome)
-            .os(fingerprint_rs::OsFamily::Windows)
+            .browser(veilus_fingerprint::BrowserFamily::Chrome)
+            .os(veilus_fingerprint::OsFamily::Windows)
             .seeded(i)
             .generate()?;
     }
