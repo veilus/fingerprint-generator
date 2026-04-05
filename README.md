@@ -20,7 +20,7 @@ Drop-in Rust alternative to Python's [`browserforge`](https://github.com/daijro/
 | **Full fingerprint coverage** | Navigator, screen, UA Client Hints (high-entropy), WebGL videoCard, audio/video codecs, battery, fonts, plugins, multimedia devices |
 | **HTTP headers** | Ordered, realistic HTTP headers (`User-Agent`, `Accept`, `sec-ch-ua`, etc.) |
 | **Deterministic** | Seed-based generation for reproducible sessions across restarts |
-| **Constrained** | Filter by browser family (Chrome, Firefox, Safari, Edge), OS (Windows, macOS, Linux, Android, iOS), and locale |
+| **Constrained** | Filter by browser family (Chrome, Firefox, Safari, Edge), OS (Windows, macOS, Linux, Android, iOS), device type (Desktop, Mobile, Tablet), and locale |
 | **Blazing fast** | ~127µs per fingerprint (warm), 7,800+ generations/sec — faster than browserforge |
 | **Zero unsafe** | `#![deny(unsafe_code)]` enforced across all crates |
 | **Tiny binary** | Bayesian networks embedded at compile time via `include_bytes!` — no runtime IO |
@@ -74,6 +74,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 FingerprintGenerator::new()          // unconstrained builder
     .browser(BrowserFamily::Chrome)  // constrain browser
     .os(OsFamily::Windows)           // constrain OS
+    .device(DeviceType::Desktop)     // constrain device type
     .locale("en-US")                 // constrain locale
     .seeded(42_u64)                  // deterministic mode
     .strict()                        // error on unsatisfiable constraints
@@ -92,6 +93,11 @@ BrowserFamily::Safari                OsFamily::Linux
 BrowserFamily::Edge                  OsFamily::Android
 BrowserFamily::Other(String)         OsFamily::Ios
                                      OsFamily::Other(String)
+
+// Device Types
+DeviceType::Desktop
+DeviceType::Mobile
+DeviceType::Tablet
 ```
 
 ### `BrowserProfile` — Output Structure
@@ -500,7 +506,7 @@ let assignment = sample_constrained(network, &constraints, &mut rng)?;
 | mockWebRTC flag | ✅ | ✅ |
 | Browser constraint | ✅ | ✅ |
 | OS constraint | ✅ | ✅ |
-| Device constraint (mobile/desktop) | ✅ | 🔜 |
+| Device constraint (mobile/desktop) | ✅ | ✅ |
 | Seeded/deterministic generation | ❌ | ✅ |
 | Strict mode (fail on impossible combos) | ❌ | ✅ |
 | Playwright/Puppeteer injector | ✅ | 🔜 |

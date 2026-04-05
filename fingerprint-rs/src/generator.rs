@@ -1,4 +1,4 @@
-use veilus_fingerprint_core::{BrowserFamily, BrowserProfile, FingerprintError, OsFamily};
+use veilus_fingerprint_core::{BrowserFamily, BrowserProfile, DeviceType, FingerprintError, OsFamily};
 use veilus_fingerprint_data::loader::{get_fingerprint_network, get_header_network};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
@@ -44,6 +44,7 @@ const IMPOSSIBLE_COMBOS: &[(&str, &str)] = &[
 pub struct FingerprintGenerator {
     browser: Option<BrowserFamily>,
     os: Option<OsFamily>,
+    device: Option<DeviceType>,
     locale: Option<String>,
     seed: Option<u64>,
     strict: bool,
@@ -71,6 +72,12 @@ impl FingerprintGenerator {
     /// Constrain the operating system family (e.g., `OsFamily::Windows`).
     pub fn os(mut self, family: OsFamily) -> Self {
         self.os = Some(family);
+        self
+    }
+
+    /// Constrain the device type (e.g., `DeviceType::Mobile`, `DeviceType::Desktop`).
+    pub fn device(mut self, device: DeviceType) -> Self {
+        self.device = Some(device);
         self
     }
 
@@ -208,6 +215,14 @@ impl FingerprintGenerator {
             );
         }
 
+        if let Some(device) = &self.device {
+            // `*DEVICE` node has flat values: "desktop", "mobile", "tablet"
+            c.insert(
+                "*DEVICE".to_string(),
+                vec![device_type_to_key(device)],
+            );
+        }
+
         c
     }
 
@@ -250,6 +265,15 @@ fn os_family_to_key(family: &OsFamily) -> String {
         OsFamily::Android => "android".to_string(),
         OsFamily::Ios => "ios".to_string(),
         OsFamily::Other(s) => s.to_lowercase(),
+    }
+}
+
+/// Map DeviceType to the lowercase key used in the Apify networks.
+fn device_type_to_key(device: &DeviceType) -> String {
+    match device {
+        DeviceType::Desktop => "desktop".to_string(),
+        DeviceType::Mobile => "mobile".to_string(),
+        DeviceType::Tablet => "tablet".to_string(),
     }
 }
 
@@ -349,6 +373,7 @@ mod tests {
         let _gen = FingerprintGenerator::new()
             .browser(BrowserFamily::Chrome)
             .os(OsFamily::Windows)
+            .device(DeviceType::Desktop)
             .locale("en-US")
             .seeded(42)
             .strict();
@@ -769,5 +794,80 @@ mod tests {
                 browser
             );
         }
+    }
+
+    // ── Device constraint tests ────────────────────────────────────────────
+
+    #[test]
+    fn device_desktop_constraint_populates_header() {
+        let gen = FingerprintGenerator::new().device(DeviceType::Desktop);
+        let constraints = gen.build_header_constraints();
+        assert!(
+            constraints.contains_key("*DEVICE"),
+            "Desktop constraint must target *DEVICE"
+        );
+        assert_eq!(constraints["*DEVICE"], vec!["desktop"]);
+    }
+
+    #[test]
+    fn device_mobile_constraint_populates_header() {
+        let gen = FingerprintGenerator::new().device(DeviceType::Mobile);
+        let constraints = gen.build_header_constraints();
+        assert_eq!(constraints["*DEVICE"], vec!["mobile"]);
+    }
+
+    #[test]
+    fn device_mobile_constraint_generates_mobile_profile() {
+        // Mobile profiles should have device=Mobile
+        // Try multiple seeds — at least one must succeed with device constraint
+        let mut found_mobile = false;
+        for seed in 0..20 {
+            let result = FingerprintGenerator::new()
+                .device(DeviceType::Mobile)
+                .seeded(seed)
+                .generate();
+
+            if let Ok(profile) = result {
+                assert_eq!(
+                    profile.device,
+                    DeviceType::Mobile,
+                    "Device constraint Mobile must produce Mobile profiles"
+                );
+                found_mobile = true;
+                break;
+            }
+        }
+        assert!(
+            found_mobile,
+            "At least one seeded generation with device=Mobile must succeed"
+        );
+    }
+
+    #[test]
+    fn device_desktop_constraint_generates_desktop_profile() {
+        let profile = FingerprintGenerator::new()
+            .device(DeviceType::Desktop)
+            .seeded(42)
+            .generate()
+            .expect("Desktop device constraint must succeed");
+
+        assert_eq!(
+            profile.device,
+            DeviceType::Desktop,
+            "Device constraint Desktop must produce Desktop profiles"
+        );
+    }
+
+    #[test]
+    fn device_and_browser_combined_constraint() {
+        let profile = FingerprintGenerator::new()
+            .browser(BrowserFamily::Chrome)
+            .device(DeviceType::Desktop)
+            .seeded(42)
+            .generate()
+            .expect("Chrome+Desktop must succeed");
+
+        assert_eq!(profile.device, DeviceType::Desktop);
+        assert_eq!(profile.browser.family, BrowserFamily::Chrome);
     }
 }
