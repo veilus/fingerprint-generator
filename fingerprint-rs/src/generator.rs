@@ -1,11 +1,13 @@
-use veilus_fingerprint_core::{BrowserFamily, BrowserProfile, DeviceType, FingerprintError, OsFamily};
-use veilus_fingerprint_data::loader::{get_fingerprint_network, get_header_network};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use veilus_fingerprint_core::{
+    BrowserFamily, BrowserProfile, DeviceType, FingerprintError, OsFamily,
+};
+use veilus_fingerprint_data::loader::{get_fingerprint_network, get_header_network};
 
 use crate::assembler::assemble_profile;
 use crate::engine::constraints::{sample_constrained, Constraints};
-use crate::engine::sampler::sample_ancestral;
+use crate::engine::sampler::{sample_ancestral, sample_ancestral_with_evidence};
 
 // ─── Known impossible constraint combinations ─────────────────────────────
 
@@ -132,21 +134,21 @@ impl FingerprintGenerator {
         let fp_network = get_fingerprint_network()?;
         let header_network = get_header_network()?;
 
-        // ── Sample fingerprint network ─────────────────────────────────────
-        let fp_assignment = if fp_constraints.is_empty() {
-            sample_ancestral(fp_network, &mut rng)?
-        } else {
-            match sample_constrained(fp_network, &fp_constraints, &mut rng) {
-                Ok(a) => a,
-                Err(e) if !self.strict => {
-                    tracing::warn!("fp constraints failed, relaxing: {e}");
-                    sample_ancestral(fp_network, &mut rng)?
-                }
-                Err(e) => return Err(e),
-            }
-        };
-
-        // ── Sample header network ──────────────────────────────────────────
+        // ── Sample header network FIRST ────────────────────────────────────
+        //
+        // THU TU O DAY LA MOT BAN SUA LOI, KHONG PHAI SO THICH.
+        //
+        // Truoc 2026-09-04, hai mang duoc lay mau DOC LAP va mang fingerprint
+        // khong nhan rang buoc nao (`build_fp_constraints` tra ve rong).
+        // `assemble_profile` doc `operating_system` tu mang HEADER va
+        // `userAgent` tu mang FINGERPRINT - nen thu vien tu bao da thoa
+        // `.os(Windows)` trong khi UA noi Linux. Do duoc 46,5% / 74,3% /
+        // 85,8% lech cho Windows / macOS / Linux tren 2000 seed moi loai, va
+        // mot seed cho ho so khai BA he dieu hanh cung luc. Xem VEIL-407.
+        //
+        // Mang header la mang NHAN duoc rang buoc (`*OPERATING_SYSTEM`,
+        // `*BROWSER`, `*DEVICE`), nen no phai chay truoc; UA no chon roi tro
+        // thanh rang buoc cho mang fingerprint.
         let header_assignment = if header_constraints.is_empty() {
             sample_ancestral(header_network, &mut rng)?
         } else {
@@ -155,6 +157,42 @@ impl FingerprintGenerator {
                 Err(e) if !self.strict => {
                     tracing::warn!("header constraints failed, relaxing: {e}");
                     sample_ancestral(header_network, &mut rng)?
+                }
+                Err(e) => return Err(e),
+            }
+        };
+
+        // ── Sample fingerprint network, KEP theo UA vua chon ───────────────
+        //
+        // EP BANG NHAU, KHONG EP "CUNG KIEU WINDOWS". Hai mang dung chung
+        // 470/479 gia tri userAgent (do 2026-09-04), nen ghim dung chuoi da
+        // chon cho su nhat quan TUYET DOI thay vi chi cung ho OS. Loc theo
+        // dau hieu OS van de lot mot UA Windows khac phien ban voi header.
+        //
+        // KEP (evidence) chu khong LAY MAU BAC BO. `userAgent` la GOC cua
+        // mang fingerprint (parent_names rong, 479 gia tri), nen kep no la
+        // phep chinh xac: moi nut con van boc tu phan phoi co dieu kien dung.
+        //
+        // Ban dau cho nay dung `sample_constrained`, va van con 1 trong 8
+        // seed thu nghiem do. Ly do: bac bo co ngan sach `so_nut * 10 = 250`
+        // luot, ma ghim dung 1 trong 479 gia tri thi thuong khong trung trong
+        // 250 luot -> roi ve nhanh du phong KHONG rang buoc -> lap lai chinh
+        // loi dang sua. Bac bo hop voi rang buoc rong, khong hop voi ghim mot
+        // gia tri.
+        let mut fp_evidence: std::collections::HashMap<String, String> =
+            std::collections::HashMap::new();
+        if let Some(ua) = header_user_agent(&header_assignment) {
+            fp_evidence.insert("userAgent".to_string(), ua);
+        }
+
+        let fp_assignment = if fp_constraints.is_empty() {
+            sample_ancestral_with_evidence(fp_network, &fp_evidence, &mut rng)?
+        } else {
+            match sample_constrained(fp_network, &fp_constraints, &mut rng) {
+                Ok(a) => a,
+                Err(e) if !self.strict => {
+                    tracing::warn!("fp constraints failed, relaxing: {e}");
+                    sample_ancestral_with_evidence(fp_network, &fp_evidence, &mut rng)?
                 }
                 Err(e) => return Err(e),
             }
@@ -209,18 +247,49 @@ impl FingerprintGenerator {
 
         if let Some(os) = &self.os {
             // `*OPERATING_SYSTEM` node has flat values: "windows", "macos", etc.
-            c.insert(
-                "*OPERATING_SYSTEM".to_string(),
-                vec![os_family_to_key(os)],
-            );
+            c.insert("*OPERATING_SYSTEM".to_string(), vec![os_family_to_key(os)]);
+
+            // RANG BUOC THANG CA HAI NUT UA THEO DAU HIEU OS.
+            //
+            // Ghim `*OPERATING_SYSTEM` la KHONG DU, du `user-agent` co no lam
+            // cha. Do 2026-09-04, `.os(windows)` khong kem `.device()` cho UA
+            // Android o 62/500 luot (12,4%).
+            //
+            // Co che: `*DEVICE` khong bi rang buoc nen boc tu do, va
+            // `windows + mobile` la to hop KHONG CO trong du lieu Apify. CPT
+            // khong co nhanh cho no, nen `traverse_cpt_and_sample` roi ve
+            // phan phoi LE - phan phoi do do Android chiem uu the, va UA
+            // Android chui ra duoi mot ho so khai Windows.
+            //
+            // Them `*DEVICE = desktop` chua duoc trieu chung (62/500 -> 0/500),
+            // nhung do la doan mot bang OS->thiet bi ma khong ai do: Surface
+            // chay Windows va la tablet. Rang buoc thang UA thi dung bat ke
+            // `*DEVICE` boc ra gi, va khong phai bia bang nao.
+            //
+            // `*MISSING_VALUE*` PHAI nam trong tap cho phep: hai nut UA la hai
+            // duong HTTP loai tru nhau (`user-agent` cho h2, `User-Agent` cho
+            // h1), nut khong duoc dung se mang gia tri do. Bo no ra thi khong
+            // mau nao thoa duoc ca hai nut cung luc.
+            if let Ok(network) = get_header_network() {
+                for ten_nut in ["user-agent", "User-Agent"] {
+                    if let Some(nut) = network.nodes.iter().find(|n| n.name == ten_nut) {
+                        let hop_le: Vec<String> = nut
+                            .possible_values
+                            .iter()
+                            .map(std::string::ToString::to_string)
+                            .filter(|v| v == MISSING_VALUE || ua_khop_os(v, os))
+                            .collect();
+                        if !hop_le.is_empty() {
+                            c.insert(ten_nut.to_string(), hop_le);
+                        }
+                    }
+                }
+            }
         }
 
         if let Some(device) = &self.device {
             // `*DEVICE` node has flat values: "desktop", "mobile", "tablet"
-            c.insert(
-                "*DEVICE".to_string(),
-                vec![device_type_to_key(device)],
-            );
+            c.insert("*DEVICE".to_string(), vec![device_type_to_key(device)]);
         }
 
         c
@@ -256,6 +325,57 @@ fn browser_family_to_key(family: &BrowserFamily) -> String {
     }
 }
 
+/// Gia tri Apify danh dau "header nay khong co mat".
+const MISSING_VALUE: &str = "*MISSING_VALUE*";
+
+/// Chuoi User-Agent nay co phai cua ho dieu hanh do khong.
+///
+/// Dung DAU HIEU trong chinh chuoi UA, khong dung bang tra: chuoi UA la thu
+/// site doc duoc, nen no moi la su that ve OS.
+///
+/// Hai bay da do 2026-09-04:
+///   - UA Android CO chua "Linux" ("Linux; Android 10; K"), nen Linux phai
+///     loai Android ra chu khong chi tim "Linux".
+///   - KHONG phai UA Linux nao cung co "X11": ban do bat gap
+///     "Mozilla/5.0 (CentOS; Linux i686)" - hop le, va mot bo loc chi tim
+///     "X11" se vut no di.
+fn ua_khop_os(ua: &str, os: &OsFamily) -> bool {
+    let co_android = ua.contains("Android");
+    let co_ios = ua.contains("iPhone") || ua.contains("iPad") || ua.contains("iPod");
+    match os {
+        OsFamily::Windows => ua.contains("Windows"),
+        // "Mac OS X" KHONG dung mot minh: UA cua iOS cung chua no
+        // ("CPU iPhone OS 17_0 like Mac OS X"). Bo loc dau tien o day dung
+        // `Macintosh || Mac OS X` va cho iPhone lot vao macOS - luot quet 200
+        // seed bat duoc o seed 61. Cung hinh dang voi bay Android/Linux ngay
+        // duoi, chi khac cap OS.
+        OsFamily::MacOs => ua.contains("Macintosh") && !co_ios,
+        OsFamily::Linux => (ua.contains("Linux") || ua.contains("X11")) && !co_android,
+        OsFamily::Android => co_android,
+        OsFamily::Ios => co_ios,
+        OsFamily::Other(_) => true,
+    }
+}
+
+/// Chuoi User-Agent ma mang header vua chon, neu co.
+///
+/// Mang header co HAI nut UA: `user-agent` (471 gia tri, duong HTTP/2) va
+/// `User-Agent` (32 gia tri, duong HTTP/1). Uu tien ban thuong vi no phu gan
+/// het tap gia tri; ban hoa dung lam du phong.
+///
+/// `*MISSING_VALUE*` la cach Apify danh dau "khong co header nay" - ghim no
+/// lam rang buoc se lam mang fingerprint khong con gia tri nao hop le.
+fn header_user_agent(assignment: &std::collections::HashMap<String, String>) -> Option<String> {
+    for ten in ["user-agent", "User-Agent"] {
+        if let Some(v) = assignment.get(ten) {
+            if !v.is_empty() && v != MISSING_VALUE {
+                return Some(v.clone());
+            }
+        }
+    }
+    None
+}
+
 /// Map OsFamily to the lowercase key used in the Apify networks.
 fn os_family_to_key(family: &OsFamily) -> String {
     match family {
@@ -287,7 +407,10 @@ mod tests {
     fn random_succeeds() {
         let profile = FingerprintGenerator::random().expect("random generation must succeed");
         assert!(!profile.fingerprint.navigator.user_agent.is_empty());
-        assert!(!profile.fingerprint.navigator.webdriver, "webdriver must always be false");
+        assert!(
+            !profile.fingerprint.navigator.webdriver,
+            "webdriver must always be false"
+        );
         assert!(profile.generated_at > 0, "generated_at must be set");
         assert_ne!(profile.id, [0u8; 16], "id must be non-zero");
     }
@@ -305,13 +428,11 @@ mod tests {
 
         // Sampled fields must match for same seed
         assert_eq!(
-            profile1.fingerprint.navigator.user_agent,
-            profile2.fingerprint.navigator.user_agent,
+            profile1.fingerprint.navigator.user_agent, profile2.fingerprint.navigator.user_agent,
             "same seed must produce identical user_agent"
         );
         assert_eq!(
-            profile1.fingerprint.screen.width,
-            profile2.fingerprint.screen.width,
+            profile1.fingerprint.screen.width, profile2.fingerprint.screen.width,
             "same seed must produce identical screen width"
         );
 
@@ -347,13 +468,90 @@ mod tests {
             .generate();
 
         assert!(
-            matches!(
-                result,
-                Err(FingerprintError::ConstraintConflict { .. })
-            ),
+            matches!(result, Err(FingerprintError::ConstraintConflict { .. })),
             "Safari+Windows must fail with ConstraintConflict, got: {:?}",
             result.err()
         );
+    }
+
+    /// Dau hieu OS trong chuoi User-Agent.
+    fn dau_hieu_ua(os: &OsFamily) -> &'static str {
+        match os {
+            OsFamily::Windows => "Windows NT",
+            OsFamily::MacOs => "Macintosh",
+            OsFamily::Linux => "Linux",
+            OsFamily::Android => "Android",
+            OsFamily::Ios => "iPhone",
+            OsFamily::Other(_) => "",
+        }
+    }
+
+    /// Rang buoc `.os()` phai toi ca `navigator.userAgent`, khong chi
+    /// `operating_system.name`.
+    ///
+    /// LY DO TON TAI. Truoc ban sua nay, hai mang Bayes duoc lay mau DOC LAP:
+    /// mang header nhan rang buoc, mang fingerprint khong nhan gi
+    /// (`build_fp_constraints` tra ve rong). `operating_system` doc tu mang
+    /// header con `userAgent` doc tu mang fingerprint, nen thu vien TU BAO da
+    /// thoa rang buoc trong khi UA noi mot he dieu hanh khac.
+    ///
+    /// Do 2026-09-04, 2000 seed moi OS:
+    ///   os=Windows -> UA khong phai Windows:  930/2000  (46,5%)
+    ///   os=macOS   -> UA khong phai macOS:   1486/2000  (74,3%)
+    ///   os=Linux   -> UA khong phai Linux:   1715/2000  (85,8%)
+    ///
+    /// Seed 11 cho mot ho so khai BA he dieu hanh cung luc:
+    ///   operating_system.name = "windows"
+    ///   navigator.platform    = "MacIntel"
+    ///   navigator.user_agent  = X11; Linux
+    ///
+    /// CHU Y: `os_windows_constraint_populates_header` ben duoi kiem BAN DO
+    /// rang buoc duoc dung, khong kiem dau ra tuan theo - nen no xanh suot
+    /// trong khi loi nay hien dien toan phan. Test nay kiem dau ra.
+    ///
+    /// PHAM VI: test nay canh `navigator.userAgent`, KHONG canh
+    /// `navigator.platform`. Do 2026-09-04, `platform` van lech OS o 5%
+    /// (Windows) va 13% (macOS) so mau - va do KHONG phai loi cua ma nay:
+    /// chinh CPT cua bo du lieu Apify chua no.
+    ///
+    ///     UA "Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."
+    ///        -> {"Linux x86_64": 0.979, "Win32": 0.021}
+    ///     34/83 UA Windows co CPT platform lan sang OS khac
+    ///
+    /// Tap do cao tu traffic that, trong do co may DANG SPOOF HONG (Linux gia
+    /// Windows bang UA nhung ro navigator.platform). Lay mau trung thanh tu
+    /// no thi tai tao luon cai spoof hong cua nguoi khac. Do la mot bai toan
+    /// khac - can mot tang kiem nhat quan tren bo sinh, khong phai sua sampler.
+    #[test]
+    fn rang_buoc_os_toi_duoc_user_agent() {
+        for os in [OsFamily::Windows, OsFamily::MacOs, OsFamily::Linux] {
+            let dau = dau_hieu_ua(&os);
+            // QUET, KHONG GHIM VAI SEED. Ban dau cho nay ghim 8 seed, va mot
+            // luot pha hoai (cho `ua_khop_os` luon tra true) VAN XANH - vi ca
+            // hong nang nhat, seed 9, khong nam trong 8 so do. Do la mot cong
+            // GIA: no nhin giong cong nhung khong bat duoc hoi quy.
+            //
+            // Che do hong hiem nhat trong ba che do do duoc la 12,4% moi mau,
+            // nen 200 mau lam xac suat lot xuong duoi 10^-11. Chay het ~3 giay.
+            for seed in 0..200u64 {
+                let p = FingerprintGenerator::new()
+                    .seeded(seed)
+                    .browser(BrowserFamily::Chrome)
+                    .os(os.clone())
+                    .generate()
+                    .expect("phai sinh duoc");
+                let ua = &p.fingerprint.navigator.user_agent;
+                assert!(
+                    ua.contains(dau),
+                    "os={os:?} seed={seed}: UA khong chua {dau:?}\n  \
+                     operating_system.name = {:?}\n  \
+                     navigator.platform    = {:?}\n  \
+                     navigator.user_agent  = {ua}",
+                    p.operating_system.name,
+                    p.fingerprint.navigator.platform,
+                );
+            }
+        }
     }
 
     #[test]
@@ -447,10 +645,7 @@ mod tests {
             Some("Gecko"),
             "product must be 'Gecko'"
         );
-        assert!(
-            !nav.webdriver,
-            "webdriver must always be false"
-        );
+        assert!(!nav.webdriver, "webdriver must always be false");
     }
 
     // ── P0: userAgentData high-entropy for Chrome ──────────────────────────
@@ -565,7 +760,10 @@ mod tests {
                 .expect("must succeed");
 
             if let Some(vc) = &profile.fingerprint.video_card {
-                assert!(!vc.renderer.is_empty(), "videoCard.renderer must not be empty");
+                assert!(
+                    !vc.renderer.is_empty(),
+                    "videoCard.renderer must not be empty"
+                );
                 assert!(!vc.vendor.is_empty(), "videoCard.vendor must not be empty");
                 any_video_card = true;
             }
@@ -589,7 +787,11 @@ mod tests {
                 .expect("must succeed");
 
             if let Some(bat) = &profile.fingerprint.battery {
-                assert!(bat.level >= 0.0 && bat.level <= 1.0, "battery level must be 0.0..1.0, got {}", bat.level);
+                assert!(
+                    bat.level >= 0.0 && bat.level <= 1.0,
+                    "battery level must be 0.0..1.0, got {}",
+                    bat.level
+                );
                 // chargingTime and dischargingTime are Option<f64> — just verify no panic
             }
         }
@@ -656,8 +858,7 @@ mod tests {
 
         // With 1000+ possible UAs, different seeds far apart almost never collide
         assert_ne!(
-            p1.fingerprint.navigator.user_agent,
-            p2.fingerprint.navigator.user_agent,
+            p1.fingerprint.navigator.user_agent, p2.fingerprint.navigator.user_agent,
             "Very different seeds should produce different user agents"
         );
     }
@@ -678,7 +879,10 @@ mod tests {
                 let has_support = [&ac.ogg, &ac.mp3, &ac.wav, &ac.m4a, &ac.aac]
                     .iter()
                     .any(|v| !v.is_empty());
-                assert!(has_support, "audioCodecs should have at least one non-empty value");
+                assert!(
+                    has_support,
+                    "audioCodecs should have at least one non-empty value"
+                );
                 any_codecs = true;
             }
         }
@@ -695,10 +899,11 @@ mod tests {
                 .expect("must succeed");
 
             if let Some(vc) = &profile.fingerprint.video_codecs {
-                let has_support = [&vc.ogg, &vc.h264, &vc.webm]
-                    .iter()
-                    .any(|v| !v.is_empty());
-                assert!(has_support, "videoCodecs should have at least one non-empty value");
+                let has_support = [&vc.ogg, &vc.h264, &vc.webm].iter().any(|v| !v.is_empty());
+                assert!(
+                    has_support,
+                    "videoCodecs should have at least one non-empty value"
+                );
                 any_codecs = true;
             }
         }
@@ -725,7 +930,10 @@ mod tests {
                 }
             }
         }
-        assert!(any_fonts, "At least one profile out of 20 should have non-empty fonts");
+        assert!(
+            any_fonts,
+            "At least one profile out of 20 should have non-empty fonts"
+        );
     }
 
     // ── P1: Plugins ────────────────────────────────────────────────────────
