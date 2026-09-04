@@ -7,7 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.75"
 authors = ["Veilus <veilusbrowser@gmail.com>"]
@@ -20,8 +20,8 @@ readme = "README.md"
 
 [workspace.dependencies]
 # Internal
-veilus-fingerprint-core = { path = "fingerprint-core", version = "0.1.0" }
-veilus-fingerprint-data = { path = "fingerprint-data", version = "0.1.0" }
+veilus-fingerprint-core = { path = "fingerprint-core", version = "0.2.0" }
+veilus-fingerprint-data = { path = "fingerprint-data", version = "0.2.0" }
 
 # External — pin exact versions to ensure reproducibility
 serde = { version = "1", features = ["derive"] }
