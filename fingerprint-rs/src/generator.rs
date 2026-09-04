@@ -415,6 +415,54 @@ fn nhan_uach(os: &OsFamily) -> Option<&'static str> {
     }
 }
 
+/// `platformVersion` nay co dung DANG cua OS do khong.
+///
+/// Luat cua chinh dac ta UA-CH, khong phai quy uoc rieng:
+/// Windows gui `X.0.0` (ba phan, minor va patch bang 0); macOS gui
+/// `major.minor.patch` voi major >= 11, hoac 10.x voi x >= 9; Linux gui chuoi
+/// RONG.
+///
+/// Do 2026-09-04 tren 600 ho so Windows, du lieu Apify co ca `"10.0"`
+/// (25 lan — CHI HAI PHAN), `""`, `"0.1.0"`, `"0.3.0"`. Do la ho so that dang
+/// khai sai, hoac dang spoof hong.
+fn platform_version_dung_dang(pv: &str, os: &OsFamily) -> bool {
+    let phan: Vec<Option<u32>> = pv.split('.').map(|x| x.parse().ok()).collect();
+    let ba_phan = phan.len() == 3 && phan.iter().all(Option::is_some);
+    let so = |i: usize| phan.get(i).copied().flatten().unwrap_or(u32::MAX);
+    match os {
+        OsFamily::Windows => ba_phan && so(1) == 0 && so(2) == 0,
+        OsFamily::MacOs => ba_phan && (so(0) == 10 && so(1) >= 9 || (11..=30).contains(&so(0))),
+        OsFamily::Linux => pv.is_empty(),
+        _ => true,
+    }
+}
+
+/// Mot gia tri `userAgentData` co nhat quan voi OS khong.
+///
+/// Loc CA `platform` LAN `platformVersion`. Ban dau cho nay chi loc
+/// `"platform":"X"`, va check "UA-CH platformVersion matches platform" van
+/// truot 12,3% — vi mot khoi UA-CH khai dung `"platform":"Windows"` van co the
+/// mang `"platformVersion":"10.0"`, thu khong Chrome nao gui.
+fn uad_nhat_quan(v: &str, os: &OsFamily) -> bool {
+    let Some(nhan) = nhan_uach(os) else {
+        return true;
+    };
+    if !v.contains(nhan) {
+        return false;
+    }
+    let Some(json) = v.strip_prefix("*STRINGIFIED*") else {
+        return true;
+    };
+    let Ok(g) = serde_json::from_str::<serde_json::Value>(json) else {
+        return true;
+    };
+    match g.get("platformVersion").and_then(serde_json::Value::as_str) {
+        Some(pv) => platform_version_dung_dang(pv, os),
+        // Khong khai thi khong co gi mau thuan.
+        None => true,
+    }
+}
+
 /// Chuoi renderer WebGL nay co MAU THUAN voi OS khong.
 ///
 /// Chi loai thu CHAC CHAN sai, khong doi phai khop duong: "Direct3D" chi ton
@@ -470,10 +518,10 @@ fn loc_theo_ua(
         f.insert("platform".to_string(), pf);
     }
 
-    if let Some(nhan) = nhan_uach(&os) {
+    if nhan_uach(&os).is_some() {
         let uad: Vec<String> = gia_tri("userAgentData")
             .into_iter()
-            .filter(|v| v.contains(nhan))
+            .filter(|v| uad_nhat_quan(v, &os))
             .collect();
         if !uad.is_empty() {
             f.insert("userAgentData".to_string(), uad);
@@ -737,6 +785,97 @@ mod tests {
     ///
     /// QUET, KHONG GHIM SEED. Che do hong o day khoang 5% moi mau; ghim vai
     /// seed thi lot. Bai hoc nay da tra gia hai lan trong ngay 2026-09-04.
+    /// `platformVersion` cua UA-CH phai dung DANG cua OS.
+    ///
+    /// Chi canh Windows va macOS. Linux CO Y bo qua: du lieu Apify cho thay
+    /// 25/500 ho so Linux gui phien ban kernel ("6.8.0", "6.11.0"...), va
+    /// chua ai xac minh Chrome tren Linux that su gui chuoi RONG. Ghim mot
+    /// luat chua kiem thi test tro thanh cho dua cho mot gia dinh sai.
+    #[test]
+    fn platform_version_dung_dang_cho_windows_va_macos() {
+        for (os, ten) in [(OsFamily::Windows, "Windows"), (OsFamily::MacOs, "macOS")] {
+            let mut xau = 0;
+            for seed in 0..200u64 {
+                let p = FingerprintGenerator::new()
+                    .seeded(seed)
+                    .browser(BrowserFamily::Chrome)
+                    .os(os.clone())
+                    .generate()
+                    .expect("phai sinh duoc");
+                let Some(u) = &p.fingerprint.navigator.user_agent_data else {
+                    continue;
+                };
+                let Some(pv) = u.platform_version.as_deref() else {
+                    continue;
+                };
+                // Chuoi rong la "khong khai" — khong phai sai dang.
+                if !pv.is_empty() && !platform_version_dung_dang(pv, &os) {
+                    xau += 1;
+                }
+            }
+            // Nguong 5%: du lieu goc con gia tri khong sua duoc bang chuan hoa
+            // dinh dang, va bia gia tri moi thi khong lam. Do 2026-09-04 sau
+            // ban sua: 0/200 ca hai OS.
+            assert!(
+                xau * 20 <= 200,
+                "{ten}: {xau}/200 ho so co platformVersion sai dang"
+            );
+        }
+    }
+
+    /// `architecture` cua UA-CH phai theo GPU.
+    #[test]
+    fn architecture_theo_gpu() {
+        for os in [OsFamily::Windows, OsFamily::MacOs, OsFamily::Linux] {
+            for seed in 0..200u64 {
+                let p = FingerprintGenerator::new()
+                    .seeded(seed)
+                    .browser(BrowserFamily::Chrome)
+                    .os(os.clone())
+                    .generate()
+                    .expect("phai sinh duoc");
+                let (Some(u), Some(vc)) = (
+                    p.fingerprint.navigator.user_agent_data.as_ref(),
+                    p.fingerprint.video_card.as_ref(),
+                ) else {
+                    continue;
+                };
+                let Some(arch) = u.architecture.as_deref() else {
+                    continue;
+                };
+                // Luat viet DOC LAP voi ban cai, bang du kien ve phan cung:
+                // GPU Apple Silicon chi ton tai tren may ARM; NVIDIA GeForce,
+                // Intel UHD/Iris va AMD Radeon la GPU roi cua may x86.
+                //
+                // KHONG chep `kien_truc_tu_renderer` sang day: mot cong dung
+                // chung dung mot ham voi thu no canh thi hai ben cung sai van
+                // xanh.
+                //
+                // Ban dau test nay coi "khong phai Apple" la x86, va no do o
+                // seed 86 voi renderer "Qualcomm Adreno X1-85" — Snapdragon X,
+                // tuc Windows on ARM. Test sai chu khong phai ma sai.
+                let r = &vc.renderer;
+                let chac_arm = r.contains("Apple M");
+                let chac_x86 = r.contains("GeForce")
+                    || r.contains("Radeon")
+                    || r.contains("Intel(R) UHD")
+                    || r.contains("Intel(R) Iris");
+                if chac_arm {
+                    assert_eq!(
+                        arch, "arm",
+                        "os={os:?} seed={seed}: GPU Apple ma arch {arch:?}"
+                    );
+                }
+                if chac_x86 {
+                    assert_eq!(
+                        arch, "x86",
+                        "os={os:?} seed={seed}: GPU roi x86 ma arch {arch:?}, renderer {r:?}"
+                    );
+                }
+            }
+        }
+    }
+
     #[test]
     fn platform_noi_cung_os_voi_user_agent() {
         for os in [OsFamily::Windows, OsFamily::MacOs, OsFamily::Linux] {

@@ -1,15 +1,15 @@
 use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use rand::{Rng, RngCore};
 use veilus_fingerprint_core::{
     AudioCodecs, Battery, BrandVersion, BrowserFamily, BrowserFingerprint, BrowserInfo,
-    BrowserProfile, DeviceType, ExtraProperties, FingerprintError, HttpHeaders,
-    MultimediaDevices, NavigatorFingerprint, OperatingSystem, OsFamily, PluginsData,
-    ScreenFingerprint, UserAgentData, VideoCard, VideoCodecs,
+    BrowserProfile, DeviceType, ExtraProperties, FingerprintError, HttpHeaders, MultimediaDevices,
+    NavigatorFingerprint, OperatingSystem, OsFamily, PluginsData, ScreenFingerprint, UserAgentData,
+    VideoCard, VideoCodecs,
 };
 use veilus_fingerprint_data::network::STRINGIFIED_PREFIX;
 use veilus_fingerprint_data::DATASET_VERSION;
-use rand::{Rng, RngCore};
 
 // ── Parse helpers ──────────────────────────────────────────────────────────
 
@@ -52,6 +52,58 @@ fn parse_browser_family(browser_str: &str) -> (BrowserFamily, String) {
         other => BrowserFamily::Other(other.to_string()),
     };
     (family, version)
+}
+
+/// Sua DINH DANG cua `platformVersion`, khong sua GIA TRI.
+///
+/// Chrome gui `major.minor.patch` ngan bang dau CHAM. Du lieu Apify chua hai
+/// dang sai khong ban cai duoc, do 2026-09-04:
+///
+/// ```text
+/// "10_15_7"  ->  "10.15.7"   dau gach duoi la dang cua chuoi UA, khong phai UA-CH
+/// "10.0"     ->  "10.0.0"    thieu phan thu ba
+/// ```
+///
+/// CHI sua hai dang do. KHONG dung o day: chuoi rong, va cac gia tri ma luat
+/// cua ta cho la sai nhung chua chac ta dung — vi du Linux gui phien ban
+/// kernel ("6.8.0", 25/500 ho so). Dat mot gia tri vao cho rong la BIA, va
+/// sua mot gia tri vi luat cua ta noi vay thi phai chac luat do dung truoc.
+///
+/// Tra `None` khi khong co gi de sua.
+fn platform_version_chuan_hoa(pv: &str) -> Option<String> {
+    if pv.is_empty() {
+        return None;
+    }
+    let cham = pv.replace('_', ".");
+    let mut phan: Vec<&str> = cham.split('.').collect();
+    if phan.iter().any(|x| x.parse::<u32>().is_err()) {
+        return None;
+    }
+    while phan.len() < 3 {
+        phan.push("0");
+    }
+    phan.truncate(3);
+    let ket = phan.join(".");
+    (ket != pv).then_some(ket)
+}
+
+/// Kien truc CPU suy tu chuoi renderer WebGL.
+///
+/// Chrome gui "arm" tren Apple Silicon va tren ARM64 noi chung, "x86" con lai.
+/// Day la mot phep suy DINH NGHIA, khong phai phong doan: renderer noi may
+/// chay chip gi, va Chrome khong co lua chon nao khac.
+fn kien_truc_tu_renderer(r: &str) -> &'static str {
+    let arm = r.contains("Apple M")
+        || r.contains("ANGLE (Apple")
+        || r.contains("aarch64")
+        || r.contains("arm64")
+        || r.contains("Mali")
+        || r.contains("Adreno");
+    if arm {
+        "arm"
+    } else {
+        "x86"
+    }
 }
 
 /// Parse OsFamily from `*OPERATING_SYSTEM` network value like `"windows"`.
@@ -104,7 +156,10 @@ pub fn assemble_profile(
     let browser_raw = headers.get("*BROWSER").cloned().unwrap_or_default();
     let (browser_family, browser_version) = parse_browser_family(&browser_raw);
 
-    let os_raw = headers.get("*OPERATING_SYSTEM").cloned().unwrap_or_default();
+    let os_raw = headers
+        .get("*OPERATING_SYSTEM")
+        .cloned()
+        .unwrap_or_default();
     let os_family = parse_os_family(&os_raw);
 
     let device_raw = headers.get("*DEVICE").cloned().unwrap_or_default();
@@ -233,23 +288,58 @@ pub fn assemble_profile(
 
     // ── Additional navigator fields from fingerprint network ────────────────
     let do_not_track = opt_field(fp, "doNotTrack");
-    let app_code_name = opt_field(fp, "appCodeName")
-        .or_else(|| Some("Mozilla".to_string()));
-    let app_name = opt_field(fp, "appName")
-        .or_else(|| Some("Netscape".to_string()));
+    let app_code_name = opt_field(fp, "appCodeName").or_else(|| Some("Mozilla".to_string()));
+    let app_name = opt_field(fp, "appName").or_else(|| Some("Netscape".to_string()));
     let app_version = opt_field(fp, "appVersion");
     let oscpu = opt_field(fp, "oscpu");
     let vendor_sub = opt_field(fp, "vendorSub");
-    let product = opt_field(fp, "product")
-        .or_else(|| Some("Gecko".to_string()));
+    let product = opt_field(fp, "product").or_else(|| Some("Gecko".to_string()));
     let max_touch_points = fp
         .get("maxTouchPoints")
         .and_then(|v| parse_stringified_u8(v));
 
     // extraProperties: *STRINGIFIED*{...}
-    let extra_properties: Option<ExtraProperties> = fp
-        .get("extraProperties")
-        .and_then(|v| parse_stringified(v));
+    let extra_properties: Option<ExtraProperties> =
+        fp.get("extraProperties").and_then(|v| parse_stringified(v));
+
+    // Renderer doc SOM, chi de kiem tra nhat quan UA-CH ngay duoi.
+    // `video_card` day du duoc dung o phia sau; cho nay chi can chuoi.
+    let renderer_tho: Option<String> = fp.get("videoCard").and_then(|v| {
+        #[derive(serde::Deserialize)]
+        struct R {
+            renderer: Option<String>,
+        }
+        parse_stringified::<R>(v).and_then(|r| r.renderer)
+    });
+
+    // ── UA-CH: architecture PHAI theo GPU, khong theo du lieu ────────────────
+    //
+    // `architecture` la HAM THUAN cua renderer: Chrome tren Apple Silicon luon
+    // gui "arm", tren x86 luon gui "x86". Nen suy no ra khong phai bia — no la
+    // dinh nghia.
+    //
+    // Vi sao can: du lieu Apify chua ca gia tri mau thuan. Do 2026-09-04 tren
+    // 600 ho so Windows (GPU khong phai Apple): 3 khoi khai "arm", 3 khai
+    // "x64" — "x64" con khong phai gia tri UA-CH hop le. Do la traffic that
+    // cua may dang spoof hong.
+    //
+    // CHI ghi de khi da co khai bao va no MAU THUAN. `None` nghia la "khong
+    // khai", va khong khai thi khong co gi mau thuan — dat mot gia tri vao do
+    // se doi hinh dang ho so ma khong sua loi nao.
+    let user_agent_data = user_agent_data.map(|mut u| {
+        if let (Some(hien), Some(r)) = (u.architecture.as_deref(), renderer_tho.as_deref()) {
+            let dung = kien_truc_tu_renderer(r);
+            if hien != dung {
+                u.architecture = Some(dung.to_string());
+            }
+        }
+        if let Some(pv) = u.platform_version.as_deref() {
+            if let Some(chuan) = platform_version_chuan_hoa(pv) {
+                u.platform_version = Some(chuan);
+            }
+        }
+        u
+    });
 
     let navigator = NavigatorFingerprint {
         user_agent,
@@ -299,26 +389,44 @@ pub fn assemble_profile(
         has_hdr: Option<bool>,
     }
 
-    let screen_data: Option<ScreenData> = fp
-        .get("screen")
-        .and_then(|v| parse_stringified(v));
+    let screen_data: Option<ScreenData> = fp.get("screen").and_then(|v| parse_stringified(v));
 
     let _ = rng; // RNG used for future screen-jitter; reserved.
 
     let screen = ScreenFingerprint {
         width: screen_data.as_ref().and_then(|s| s.width).unwrap_or(1920),
         height: screen_data.as_ref().and_then(|s| s.height).unwrap_or(1080),
-        avail_width: screen_data.as_ref().and_then(|s| s.avail_width).unwrap_or(1920),
-        avail_height: screen_data.as_ref().and_then(|s| s.avail_height).unwrap_or(1040),
-        color_depth: screen_data.as_ref().and_then(|s| s.color_depth).map(|v| v as u8).unwrap_or(24u8),
-        pixel_depth: screen_data.as_ref().and_then(|s| s.pixel_depth).map(|v| v as u8).unwrap_or(24u8),
+        avail_width: screen_data
+            .as_ref()
+            .and_then(|s| s.avail_width)
+            .unwrap_or(1920),
+        avail_height: screen_data
+            .as_ref()
+            .and_then(|s| s.avail_height)
+            .unwrap_or(1040),
+        color_depth: screen_data
+            .as_ref()
+            .and_then(|s| s.color_depth)
+            .map(|v| v as u8)
+            .unwrap_or(24u8),
+        pixel_depth: screen_data
+            .as_ref()
+            .and_then(|s| s.pixel_depth)
+            .map(|v| v as u8)
+            .unwrap_or(24u8),
         device_pixel_ratio: screen_data
             .as_ref()
             .and_then(|s| s.device_pixel_ratio)
             .map(|v| v as f32)
             .unwrap_or(1.0f32),
-        inner_width: screen_data.as_ref().and_then(|s| s.inner_width).unwrap_or(0),
-        inner_height: screen_data.as_ref().and_then(|s| s.inner_height).unwrap_or(0),
+        inner_width: screen_data
+            .as_ref()
+            .and_then(|s| s.inner_width)
+            .unwrap_or(0),
+        inner_height: screen_data
+            .as_ref()
+            .and_then(|s| s.inner_height)
+            .unwrap_or(0),
         // Extended screen fields
         avail_top: screen_data.as_ref().and_then(|s| s.avail_top),
         avail_left: screen_data.as_ref().and_then(|s| s.avail_left),
@@ -333,33 +441,24 @@ pub fn assemble_profile(
     };
 
     // ── Extended fingerprint data from fingerprint network ───────────────────
-    let video_card: Option<VideoCard> = fp
-        .get("videoCard")
-        .and_then(|v| parse_stringified(v));
+    let video_card: Option<VideoCard> = fp.get("videoCard").and_then(|v| parse_stringified(v));
 
-    let audio_codecs: Option<AudioCodecs> = fp
-        .get("audioCodecs")
-        .and_then(|v| parse_stringified(v));
+    let audio_codecs: Option<AudioCodecs> =
+        fp.get("audioCodecs").and_then(|v| parse_stringified(v));
 
-    let video_codecs: Option<VideoCodecs> = fp
-        .get("videoCodecs")
-        .and_then(|v| parse_stringified(v));
+    let video_codecs: Option<VideoCodecs> =
+        fp.get("videoCodecs").and_then(|v| parse_stringified(v));
 
-    let battery: Option<Battery> = fp
-        .get("battery")
-        .and_then(|v| parse_stringified(v));
+    let battery: Option<Battery> = fp.get("battery").and_then(|v| parse_stringified(v));
 
     let multimedia_devices: Option<MultimediaDevices> = fp
         .get("multimediaDevices")
         .and_then(|v| parse_stringified(v));
 
-    let plugins_data: Option<PluginsData> = fp
-        .get("pluginsData")
-        .and_then(|v| parse_stringified(v));
+    let plugins_data: Option<PluginsData> =
+        fp.get("pluginsData").and_then(|v| parse_stringified(v));
 
-    let fonts: Option<Vec<String>> = fp
-        .get("fonts")
-        .and_then(|v| parse_stringified(v));
+    let fonts: Option<Vec<String>> = fp.get("fonts").and_then(|v| parse_stringified(v));
 
     // ── HTTP Headers from header network ────────────────────────────────────
     // BUG FIX: Filter out ALL `*` prefixed keys (internal Bayesian network metadata)
@@ -377,10 +476,7 @@ pub fn assemble_profile(
     }
 
     // mockWebRTC: true for browsers that expose WebRTC APIs by default
-    let mock_web_rtc = matches!(
-        browser_family,
-        BrowserFamily::Chrome | BrowserFamily::Edge
-    );
+    let mock_web_rtc = matches!(browser_family, BrowserFamily::Chrome | BrowserFamily::Edge);
 
     Ok(BrowserProfile {
         id,
