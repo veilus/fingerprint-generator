@@ -30,10 +30,12 @@ pub(crate) mod assembler;
 /// Fluent builder API for fingerprint generation.
 pub mod generator;
 
-pub use engine::{sample_ancestral, sample_constrained, Constraints};
+pub use engine::{
+    sample_ancestral, sample_ancestral_with_evidence, sample_constrained, Constraints,
+};
+pub use generator::FingerprintGenerator;
 pub use veilus_fingerprint_core::FingerprintError;
 pub use veilus_fingerprint_core::{
     BrandVersion, BrowserFamily, BrowserFingerprint, BrowserInfo, BrowserProfile, DeviceType,
     HttpHeaders, NavigatorFingerprint, OperatingSystem, OsFamily, ScreenFingerprint, UserAgentData,
 };
-pub use generator::FingerprintGenerator;

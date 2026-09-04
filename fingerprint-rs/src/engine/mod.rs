@@ -7,4 +7,4 @@ pub mod sampler;
 pub mod constraints;
 
 pub use constraints::{sample_constrained, Constraints};
-pub use sampler::sample_ancestral;
+pub use sampler::{sample_ancestral, sample_ancestral_with_evidence};

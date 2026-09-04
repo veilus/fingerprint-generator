@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use rand::Rng;
 use veilus_fingerprint_core::FingerprintError;
 use veilus_fingerprint_data::network::{BayesianNetwork, BayesianNode, CptNode, MISSING_VALUE};
-use rand::Rng;
 
 // ─── Topological Sort (Kahn's Algorithm) ────────────────────────────────────
 
@@ -190,6 +190,34 @@ pub fn sample_ancestral(
     network: &BayesianNetwork,
     rng: &mut impl Rng,
 ) -> Result<HashMap<String, String>, FingerprintError> {
+    sample_ancestral_with_evidence(network, &HashMap::new(), rng)
+}
+
+/// Lay mau to tien, nhung KEP san mot so nut ve gia tri cho truoc.
+///
+/// KHI NAO DUNG HAM NAY, va khi nao KHONG.
+///
+/// Kep mot nut roi lay mau to tien chi CHINH XAC khi nut do la GOC (khong co
+/// cha). Luc do phan phoi cua moi nut con van la phan phoi co dieu kien dung -
+/// khong co gi phai suy dien nguoc.
+///
+/// Kep mot nut CO CHA thi KHONG chinh xac: cha van boc tu tien nghiem, khong
+/// nhin gia tri da kep. Do la mot cai bay co that, do duoc o mot thu vien
+/// khac 2026-09-04: kep `platform = ios` (con cua `browser`) cho ra 81% ho so
+/// bat kha, trong do 65% la "Chrome tren iOS" - dung bang tien nghiem cua
+/// `browser`. Muon kep nut co cha thi phai lay mau bac bo hoac suy dien hau
+/// nghiem, khong phai ham nay.
+///
+/// VI SAO KHONG DUNG `sample_constrained` CHO CA HAI: no lay mau bac bo, va
+/// bac bo hong khi rang buoc qua hep. Ghim dung mot trong 479 gia tri cua
+/// `userAgent` voi ngan sach `so_nut * 10 = 250` luot thi that bai phan lon
+/// thoi gian, roi roi ve nhanh du phong khong rang buoc. Bac bo hop voi rang
+/// buoc RONG (mot ho OS), khong hop voi ghim mot gia tri.
+pub fn sample_ancestral_with_evidence(
+    network: &BayesianNetwork,
+    evidence: &HashMap<String, String>,
+    rng: &mut impl Rng,
+) -> Result<HashMap<String, String>, FingerprintError> {
     let nodes = &network.nodes;
     let order = topological_sort(nodes)?;
     let mut assignment: HashMap<String, String> = HashMap::with_capacity(nodes.len());
@@ -208,8 +236,10 @@ pub fn sample_ancestral(
             })
             .collect();
 
-        let value =
-            traverse_cpt_and_sample(&node.conditional_probabilities, &parent_values, rng)?;
+        let value = match evidence.get(&node.name) {
+            Some(v) => v.clone(),
+            None => traverse_cpt_and_sample(&node.conditional_probabilities, &parent_values, rng)?,
+        };
         assignment.insert(node.name.clone(), value);
     }
 
@@ -226,9 +256,9 @@ pub fn missing_value() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use veilus_fingerprint_data::loader::{get_fingerprint_network, get_header_network};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+    use veilus_fingerprint_data::loader::{get_fingerprint_network, get_header_network};
 
     #[test]
     fn ancestral_sample_has_all_nodes_header() {
