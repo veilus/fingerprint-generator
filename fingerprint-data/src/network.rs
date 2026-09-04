@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::io::{BufReader, Cursor, Read};
 
 use serde::{Deserialize, Serialize};
@@ -34,14 +34,37 @@ pub const STRINGIFIED_PREFIX: &str = "*STRINGIFIED*";
 #[serde(untagged)]
 pub enum CptNode {
     /// A non-leaf level or subtree.
-    Object(HashMap<String, CptNode>),
+    ///
+    /// `BTreeMap` CHU KHONG `HashMap`, va day la mot BAN SUA LOI.
+    ///
+    /// `leaf_probabilities()` duyet map nay roi `sample_from_probs` cong don
+    /// trong so THEO THU TU cho toi khi vuot nguong. Voi `HashMap`, thu tu
+    /// duyet duoc `RandomState` ngau nhien hoa THEO TIEN TRINH - nen cung mot
+    /// seed, cung mot binary, hai lan chay cho hai gia tri khac nhau.
+    ///
+    /// Do 2026-09-04, bam navigator cua 1500 ho so qua ba tien trinh:
+    ///
+    /// ```text
+    /// 6ed94069ccf3800f
+    /// e6aadda7a2bc49dd
+    /// df122e3a0797a511
+    /// ```
+    ///
+    /// Loi THUA: mot phep thu 30 seed qua sach 3/3 luot. Va
+    /// `examples/seeded_batch.rs` in "Match: true" vi no so trong CUNG MOT
+    /// tien trinh, noi thu tu HashMap da co dinh - no khang dinh dung thu no
+    /// khong kiem.
+    ///
+    /// Sua bang KIEU chu khong bang mot loi goi `sort` truoc khi boc: loi goi
+    /// do se bi quen o duong code ke tiep, con kieu thi khong the quen.
+    Object(BTreeMap<String, CptNode>),
     /// A leaf probability value.
     Probability(f64),
 }
 
 impl CptNode {
     /// Get the `"deeper"` sub-table (present on non-leaf levels).
-    pub fn get_deeper(&self) -> Option<&HashMap<String, CptNode>> {
+    pub fn get_deeper(&self) -> Option<&BTreeMap<String, CptNode>> {
         match self {
             CptNode::Object(map) => map.get("deeper").and_then(|d| match d {
                 CptNode::Object(inner) => Some(inner),
@@ -161,6 +184,50 @@ impl BayesianNetwork {
 }
 
 #[cfg(test)]
+mod tests_thu_tu {
+    use super::*;
+
+    /// `leaf_probabilities()` phai tra ve THU TU CO DINH, khong phu thuoc thu
+    /// tu chen.
+    ///
+    /// LY DO TON TAI. `sample_from_probs` cong don trong so theo thu tu Vec
+    /// nay cho toi khi vuot nguong, nen thu tu la MOT PHAN CUA KET QUA. Voi
+    /// `HashMap`, thu tu duyet duoc `RandomState` ngau nhien hoa theo tien
+    /// trinh - cung seed, hai lan chay, hai ho so khac nhau. Xem VEIL-412.
+    ///
+    /// Test nay chay TRONG MOT TIEN TRINH, nen no khong the tu minh bat duoc
+    /// bug goc (thu tu HashMap co dinh trong mot lan chay). Cai no ghim la
+    /// BAT BIEN: doi thu tu chen ma ket qua doi thi kieu du lieu da sai lai.
+    /// Phep thu that la bam 1500 ho so qua nhieu tien trinh.
+    #[test]
+    fn thu_tu_la_khong_doi_bat_ke_thu_tu_chen() {
+        let cap = [("zeta", 0.1), ("alpha", 0.5), ("mu", 0.4)];
+
+        let mut xuoi = BTreeMap::new();
+        for (k, v) in cap {
+            xuoi.insert(k.to_string(), CptNode::Probability(v));
+        }
+        let mut nguoc = BTreeMap::new();
+        for (k, v) in cap.iter().rev() {
+            nguoc.insert((*k).to_string(), CptNode::Probability(*v));
+        }
+
+        let a = CptNode::Object(xuoi)
+            .leaf_probabilities()
+            .expect("phai la la");
+        let b = CptNode::Object(nguoc)
+            .leaf_probabilities()
+            .expect("phai la la");
+        assert_eq!(a, b, "thu tu tra ve doi theo thu tu chen");
+        assert_eq!(
+            a.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+            vec!["alpha", "mu", "zeta"],
+            "phai sap theo khoa"
+        );
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::{FINGERPRINT_NETWORK_BYTES, HEADER_NETWORK_BYTES};
@@ -181,15 +248,24 @@ mod tests {
     fn fingerprint_network_deserializes() {
         let network = BayesianNetwork::from_zip_bytes(FINGERPRINT_NETWORK_BYTES)
             .expect("fingerprint network must deserialize");
-        assert!(!network.nodes.is_empty(), "fingerprint network must have nodes");
+        assert!(
+            !network.nodes.is_empty(),
+            "fingerprint network must have nodes"
+        );
     }
 
     #[test]
     fn header_network_has_browser_root() {
         let network = BayesianNetwork::from_zip_bytes(HEADER_NETWORK_BYTES).unwrap();
         let root = &network.nodes[0];
-        assert_eq!(root.name, "*BROWSER", "header network root must be *BROWSER");
-        assert!(!root.possible_values.is_empty(), "root must have possible values");
+        assert_eq!(
+            root.name, "*BROWSER",
+            "header network root must be *BROWSER"
+        );
+        assert!(
+            !root.possible_values.is_empty(),
+            "root must have possible values"
+        );
     }
 
     #[test]
