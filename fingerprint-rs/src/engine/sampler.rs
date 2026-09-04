@@ -69,16 +69,41 @@ fn topological_sort(nodes: &[BayesianNode]) -> Result<Vec<usize>, FingerprintErr
 ///    - If found and the matched sub-node is a leaf, sample from it.
 ///    - If NOT found in `deeper` and a `skip` entry exists, use `skip` as the fallback.
 ///    - If NOT found and no `skip`, return `SamplingFailed`.
-pub(crate) fn traverse_cpt_and_sample(
+///
+/// Boc o la co the LOC tap gia tri truoc.
+///
+/// `sample_from_probs` chuan hoa theo TONG trong so chu khong gia dinh tong
+/// bang 1, nen loc mot tap con roi boc chinh la phep lay mau CO DIEU KIEN -
+/// khong phai xap xi. Da dang trong phan hop le duoc giu nguyen: neu mot UA
+/// Windows co ca "Win32" lan "Win64", ca hai van co the ra, theo dung ti le
+/// tuong doi cua chung.
+///
+/// Tap loc RONG thi quay ve khong loc. Do la lua chon co y: tha sinh mot gia
+/// tri kho tin con hon sinh mot loi - va cho nay dang duoc dem trong test.
+pub(crate) fn traverse_cpt_filtered(
     cpt: &CptNode,
     parent_values: &[(&str, &str)],
+    allowed: Option<&[String]>,
     rng: &mut impl Rng,
 ) -> Result<String, FingerprintError> {
+    let boc = |probs: Vec<(String, f64)>, rng: &mut _| -> Result<String, FingerprintError> {
+        if let Some(cho_phep) = allowed {
+            let loc: Vec<(String, f64)> = probs
+                .iter()
+                .filter(|(v, _)| cho_phep.iter().any(|a| a == v))
+                .cloned()
+                .collect();
+            if !loc.is_empty() {
+                return sample_from_probs(&loc, rng);
+            }
+        }
+        sample_from_probs(&probs, rng)
+    };
     // Base case: no more parents to resolve
     if parent_values.is_empty() {
         // Attempt to treat the current node as a leaf
         if let Some(probs) = cpt.leaf_probabilities() {
-            return sample_from_probs(&probs, rng);
+            return boc(probs, rng);
         }
         // If the node still has a "deeper" (shouldn't happen, but be defensive)
         if let Some(deeper_map) = cpt.get_deeper() {
@@ -90,7 +115,7 @@ pub(crate) fn traverse_cpt_and_sample(
                 .flatten()
                 .collect();
             if !all_probs.is_empty() {
-                return sample_from_probs(&all_probs, rng);
+                return boc(all_probs, rng);
             }
         }
         return Err(FingerprintError::SamplingFailed(
@@ -105,11 +130,11 @@ pub(crate) fn traverse_cpt_and_sample(
     if let Some(deeper_map) = cpt.get_deeper() {
         if let Some(branch) = deeper_map.get(parent_value) {
             // Found the parent value — recurse with the branch and remaining parents
-            return traverse_cpt_and_sample(branch, remaining, rng);
+            return traverse_cpt_filtered(branch, remaining, allowed, rng);
         }
         // Parent value not in deeper — check for skip fallback
         if let Some(skip) = cpt.get_skip() {
-            return traverse_cpt_and_sample(skip, remaining, rng);
+            return traverse_cpt_filtered(skip, remaining, allowed, rng);
         }
         // No skip either — sampling failed
         return Err(FingerprintError::SamplingFailed(format!(
@@ -119,7 +144,7 @@ pub(crate) fn traverse_cpt_and_sample(
 
     // No "deeper" key at this level — this IS the leaf; sample it
     if let Some(probs) = cpt.leaf_probabilities() {
-        return sample_from_probs(&probs, rng);
+        return boc(probs, rng);
     }
 
     Err(FingerprintError::SamplingFailed(format!(
@@ -190,7 +215,7 @@ pub fn sample_ancestral(
     network: &BayesianNetwork,
     rng: &mut impl Rng,
 ) -> Result<HashMap<String, String>, FingerprintError> {
-    sample_ancestral_with_evidence(network, &HashMap::new(), rng)
+    sample_ancestral_with_evidence(network, &HashMap::new(), &HashMap::new(), rng)
 }
 
 /// Lay mau to tien, nhung KEP san mot so nut ve gia tri cho truoc.
@@ -216,6 +241,7 @@ pub fn sample_ancestral(
 pub fn sample_ancestral_with_evidence(
     network: &BayesianNetwork,
     evidence: &HashMap<String, String>,
+    filters: &HashMap<String, Vec<String>>,
     rng: &mut impl Rng,
 ) -> Result<HashMap<String, String>, FingerprintError> {
     let nodes = &network.nodes;
@@ -238,7 +264,12 @@ pub fn sample_ancestral_with_evidence(
 
         let value = match evidence.get(&node.name) {
             Some(v) => v.clone(),
-            None => traverse_cpt_and_sample(&node.conditional_probabilities, &parent_values, rng)?,
+            None => traverse_cpt_filtered(
+                &node.conditional_probabilities,
+                &parent_values,
+                filters.get(&node.name).map(Vec::as_slice),
+                rng,
+            )?,
         };
         assignment.insert(node.name.clone(), value);
     }
