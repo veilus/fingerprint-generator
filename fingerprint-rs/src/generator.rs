@@ -181,22 +181,50 @@ impl FingerprintGenerator {
         // gia tri.
         let mut fp_evidence: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
+        let mut fp_filters: std::collections::HashMap<String, Vec<String>> =
+            std::collections::HashMap::new();
         if let Some(ua) = header_user_agent(&header_assignment) {
+            fp_filters = loc_theo_ua(fp_network, &ua);
             fp_evidence.insert("userAgent".to_string(), ua);
         }
 
         let fp_assignment = if fp_constraints.is_empty() {
-            sample_ancestral_with_evidence(fp_network, &fp_evidence, &mut rng)?
+            sample_ancestral_with_evidence(fp_network, &fp_evidence, &fp_filters, &mut rng)?
         } else {
             match sample_constrained(fp_network, &fp_constraints, &mut rng) {
                 Ok(a) => a,
                 Err(e) if !self.strict => {
                     tracing::warn!("fp constraints failed, relaxing: {e}");
-                    sample_ancestral_with_evidence(fp_network, &fp_evidence, &mut rng)?
+                    sample_ancestral_with_evidence(fp_network, &fp_evidence, &fp_filters, &mut rng)?
                 }
                 Err(e) => return Err(e),
             }
         };
+
+        // ── Tang hai: suy ra khi CPT khong co gia tri nao nhat quan ───────
+        //
+        // Loc (tang mot) giu duoc da dang o cho CPT CO gia tri hop le. Nhung
+        // do 2026-09-04, 27/83 UA Windows va 48/101 UA macOS co nhanh CPT
+        // `platform` KHONG chua gia tri nao cua chinh OS do - mot trong so do
+        // la `{"Linux x86_64": 1.0}`. O nhung UA ay khong co gi de loc, nen
+        // chi con hai duong: giu mau thuan, hoac suy ra.
+        //
+        // Suy ra. Mot ho so tu mau thuan bi bat ngay; mot `platform` suy tu UA
+        // thi dung theo dinh nghia. Cai mat la da dang o dung nhung UA do, va
+        // do la cai gia dang tra.
+        let mut fp_assignment = fp_assignment;
+        if let Some(ua) = fp_assignment.get("userAgent").cloned() {
+            if let Some(os) = os_tu_ua(&ua) {
+                // `map_or` chu khong `is_none_or`: MSRV cua crate la 1.75,
+                // con `is_none_or` moi on dinh tu 1.82.
+                let can_sua = fp_assignment
+                    .get("platform")
+                    .map_or(true, |pf| !platform_khop_os(pf, &os));
+                if can_sua {
+                    fp_assignment.insert("platform".to_string(), platform_suy_ra(&os).to_string());
+                }
+            }
+        }
 
         assemble_profile(&fp_assignment, &header_assignment, &mut rng)
     }
@@ -323,6 +351,144 @@ fn browser_family_to_key(family: &BrowserFamily) -> String {
         BrowserFamily::Edge => "edge".to_string(),
         BrowserFamily::Other(s) => s.to_lowercase(),
     }
+}
+
+/// Ho dieu hanh suy tu chuoi User-Agent.
+///
+/// Chuoi UA la thu site doc duoc, nen no la SU THAT ve OS cua ho so. Moi
+/// truong khac phai theo no, khong phai nguoc lai.
+fn os_tu_ua(ua: &str) -> Option<OsFamily> {
+    if ua.contains("Android") {
+        Some(OsFamily::Android)
+    } else if ua.contains("iPhone") || ua.contains("iPad") || ua.contains("iPod") {
+        Some(OsFamily::Ios)
+    } else if ua.contains("Windows") {
+        Some(OsFamily::Windows)
+    } else if ua.contains("Macintosh") {
+        Some(OsFamily::MacOs)
+    } else if ua.contains("Linux") || ua.contains("X11") {
+        Some(OsFamily::Linux)
+    } else {
+        None
+    }
+}
+
+/// `navigator.platform` nay co noi cung mot OS voi UA khong.
+fn platform_khop_os(pf: &str, os: &OsFamily) -> bool {
+    let arm_di_dong = pf.contains("armv") || pf.contains("aarch64");
+    match os {
+        OsFamily::Windows => pf.starts_with("Win"),
+        OsFamily::MacOs => pf == "MacIntel" || pf.starts_with("Mac"),
+        // Android CUNG bao "Linux ...", nen Linux phai loai ARM di dong ra.
+        // Bay nay giong het bay "Linux" trong chuoi UA cua Android.
+        OsFamily::Linux => pf.starts_with("Linux") && !arm_di_dong,
+        OsFamily::Android => pf.starts_with("Linux"),
+        OsFamily::Ios => pf == "iPhone" || pf == "iPad" || pf.starts_with("iP"),
+        OsFamily::Other(_) => true,
+    }
+}
+
+/// `navigator.platform` suy tu OS, dung khi CPT khong cap duoc gia tri hop le.
+///
+/// Chrome tren Windows 64-bit VAN bao "Win32" - do la hanh vi that, khong
+/// phai nham. Bang nay khop voi nhanh du phong cua `assemble_profile`.
+fn platform_suy_ra(os: &OsFamily) -> &'static str {
+    match os {
+        OsFamily::Windows => "Win32",
+        OsFamily::MacOs => "MacIntel",
+        OsFamily::Linux => "Linux x86_64",
+        OsFamily::Android => "Linux armv8l",
+        OsFamily::Ios => "iPhone",
+        OsFamily::Other(_) => "",
+    }
+}
+
+/// Nhan `"platform":"X"` ma `userAgentData` phai mang, theo OS.
+fn nhan_uach(os: &OsFamily) -> Option<&'static str> {
+    match os {
+        OsFamily::Windows => Some("\"platform\":\"Windows\""),
+        OsFamily::MacOs => Some("\"platform\":\"macOS\""),
+        OsFamily::Linux => Some("\"platform\":\"Linux\""),
+        OsFamily::Android => Some("\"platform\":\"Android\""),
+        OsFamily::Ios => None, // Safari/iOS khong gui userAgentData
+        OsFamily::Other(_) => None,
+    }
+}
+
+/// Chuoi renderer WebGL nay co MAU THUAN voi OS khong.
+///
+/// Chi loai thu CHAC CHAN sai, khong doi phai khop duong: "Direct3D" chi ton
+/// tai tren Windows, GPU "Apple M*" chi ton tai tren may Apple. Con lai
+/// (Intel, NVIDIA, AMD qua OpenGL) chay duoc nhieu OS nen khong loai.
+fn renderer_mau_thuan_os(r: &str, os: &OsFamily) -> bool {
+    let d3d = r.contains("Direct3D") || r.contains("D3D11");
+    let apple_silicon = r.contains("Apple M") || r.contains("ANGLE (Apple");
+    match os {
+        OsFamily::Windows => apple_silicon,
+        OsFamily::MacOs => d3d,
+        OsFamily::Linux | OsFamily::Android => d3d || apple_silicon,
+        OsFamily::Ios => d3d,
+        OsFamily::Other(_) => false,
+    }
+}
+
+/// Tap gia tri cho phep cua tung nut, suy tu UA da chot.
+///
+/// LY DO TON TAI. `userAgent` la GOC va da duoc kep, nhung CPT cua cac nut con
+/// VAN chua mau thuan: do 2026-09-04, 34/83 UA Windows co nhanh `platform` lan
+/// sang OS khac, mot trong so do la `{"Linux x86_64": 1.0}` - tuc UA Windows
+/// mà KHONG BAO GIO ra platform Windows. Khong nut nao roi ve nhanh `skip`,
+/// nen day la DU LIEU chu khong phai loi tra bang.
+///
+/// Tap Apify cao tu traffic that, trong do co may DANG SPOOF HONG. Lay mau
+/// trung thanh thi tai tao luon cai spoof hong cua nguoi khac.
+///
+/// Bo sinh fingerprint khong nham tai tao dan so KE CA KE NOI DOI trong do.
+/// No nham tao ra mot thanh vien BINH THUONG cua dan so. Mot ho so tu mau
+/// thuan khong phai thanh vien binh thuong - no la ke noi doi bi bat.
+fn loc_theo_ua(
+    network: &veilus_fingerprint_data::network::BayesianNetwork,
+    ua: &str,
+) -> std::collections::HashMap<String, Vec<String>> {
+    let mut f = std::collections::HashMap::new();
+    let Some(os) = os_tu_ua(ua) else { return f };
+
+    let gia_tri = |ten: &str| -> Vec<String> {
+        network
+            .nodes
+            .iter()
+            .find(|n| n.name == ten)
+            .map(|n| n.possible_values.iter().map(ToString::to_string).collect())
+            .unwrap_or_default()
+    };
+
+    let pf: Vec<String> = gia_tri("platform")
+        .into_iter()
+        .filter(|v| platform_khop_os(v, &os))
+        .collect();
+    if !pf.is_empty() {
+        f.insert("platform".to_string(), pf);
+    }
+
+    if let Some(nhan) = nhan_uach(&os) {
+        let uad: Vec<String> = gia_tri("userAgentData")
+            .into_iter()
+            .filter(|v| v.contains(nhan))
+            .collect();
+        if !uad.is_empty() {
+            f.insert("userAgentData".to_string(), uad);
+        }
+    }
+
+    let vc: Vec<String> = gia_tri("videoCard")
+        .into_iter()
+        .filter(|v| !renderer_mau_thuan_os(v, &os))
+        .collect();
+    if !vc.is_empty() {
+        f.insert("videoCard".to_string(), vc);
+    }
+
+    f
 }
 
 /// Gia tri Apify danh dau "header nay khong co mat".
@@ -549,6 +715,44 @@ mod tests {
                      navigator.user_agent  = {ua}",
                     p.operating_system.name,
                     p.fingerprint.navigator.platform,
+                );
+            }
+        }
+    }
+
+    /// `navigator.platform` phai noi cung mot OS voi `navigator.userAgent`.
+    ///
+    /// LY DO TON TAI. `userAgent` la goc va da duoc kep tu VEIL-407, nhung CPT
+    /// cua `platform` van chua mau thuan san: do 2026-09-04, 27/83 UA Windows
+    /// va 48/101 UA macOS co nhanh CPT KHONG chua gia tri nao cua chinh OS do
+    /// (mot trong so do la `{"Linux x86_64": 1.0}`, tuc mot UA Windows khong
+    /// bao gio ra platform Windows).
+    ///
+    /// Do bang 22 phep kiem cua veilus-core tren 1500 ho so:
+    ///
+    /// ```text
+    /// truoc: "Platform matches OS" truot 87/1500 (5,8%)
+    /// sau:                                1/1500 (0,1%)
+    /// ```
+    ///
+    /// QUET, KHONG GHIM SEED. Che do hong o day khoang 5% moi mau; ghim vai
+    /// seed thi lot. Bai hoc nay da tra gia hai lan trong ngay 2026-09-04.
+    #[test]
+    fn platform_noi_cung_os_voi_user_agent() {
+        for os in [OsFamily::Windows, OsFamily::MacOs, OsFamily::Linux] {
+            for seed in 0..200u64 {
+                let p = FingerprintGenerator::new()
+                    .seeded(seed)
+                    .browser(BrowserFamily::Chrome)
+                    .os(os.clone())
+                    .generate()
+                    .expect("phai sinh duoc");
+                let ua = &p.fingerprint.navigator.user_agent;
+                let pf = &p.fingerprint.navigator.platform;
+                let os_ua = os_tu_ua(ua).expect("UA phai noi ro OS");
+                assert!(
+                    platform_khop_os(pf, &os_ua),
+                    "os={os:?} seed={seed}: platform {pf:?} khong khop UA\n  {ua}"
                 );
             }
         }
