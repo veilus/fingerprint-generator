@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.2.1 — 2026-09-05
+
+Nối tiếp 0.2.0. **Đầu ra đổi so với 0.2.0** ở cùng một seed — có chủ ý, xem
+mục cuối. Không có thay đổi API: không một mục `pub` nào đổi chữ ký.
+
+### Sửa lỗi
+
+0.2.0 sửa `navigator.platform` cho khớp user agent. Việc đó làm lộ ra mâu
+thuẫn ở tầng kế tiếp: trước đây `platform` cũng sai nên hai bên cùng sai và
+không phép kiểm nào thấy gì. Ba đường dưới đây sửa tầng đó, mỗi đường một cơ
+chế khác nhau.
+
+**Lọc `userAgentData` theo CẢ `platform` LẪN `platformVersion`.** Trước chỉ lọc
+`"platform":"X"`, nên một khối khai đúng `"platform":"Windows"` vẫn mang được
+`"platformVersion":"10.0"` — chuỗi không Chrome nào gửi.
+
+**Suy `architecture` từ renderer.** Hàm thuần, không phải bịa: Chrome trên
+Apple Silicon luôn gửi `"arm"`, trên x86 luôn `"x86"`. Bộ dữ liệu Apify cào từ
+traffic thật nên có cả giá trị mâu thuẫn — đo trên 600 hồ sơ Windows với GPU
+không phải Apple: 3 khối khai `"arm"`, 3 khai `"x64"` (còn không phải giá trị
+UA-CH hợp lệ). **Chỉ ghi đè khi đã khai và mâu thuẫn**; `None` là "không khai",
+mà không khai thì không có gì mâu thuẫn.
+
+**Chuẩn hoá định dạng `platformVersion`**, không sửa giá trị: `"10_15_7"` →
+`"10.15.7"` (gạch dưới là dạng của chuỗi UA, không phải của UA-CH), `"10.0"` →
+`"10.0.0"`.
+
+Đo trên 1500 hồ sơ, 22 phép kiểm nhất quán:
+
+```
+UA-CH architecture matches GPU          12,1%  ->  0,5%
+UA-CH platformVersion matches platform  11,9%  ->  7,4%
+diem trung binh                          94,4  ->  95,2
+```
+
+### Cố ý KHÔNG sửa
+
+**Chuỗi rỗng** (73/500 hồ sơ macOS, 5/500 Windows). Đặt một giá trị vào chỗ
+rỗng là **bịa**, không phải suy. Chrome thật có gửi chuỗi rỗng.
+
+**Linux gửi phiên bản kernel** (`6.8.0` 25/500, cùng `6.11.0`, `6.14.0`). Luật
+nội bộ của chúng tôi nói Linux phải rỗng, nhưng **chưa ai xác minh Chrome trên
+Linux thật sự gửi rỗng**. Đây có thể là luật sai chứ không phải dữ liệu sai, và
+sửa dữ liệu theo một luật chưa kiểm thì phải chắc luật đúng trước. Phép kiểm
+mới cố ý bỏ qua Linux và ghi rõ lý do đó tại chỗ.
+
+### Đầu ra đổi
+
+Cùng seed, cùng phiên bản dữ liệu, `0.2.1` sinh ra hồ sơ khác `0.2.0` ở
+`userAgentData.architecture` và `userAgentData.platformVersion`. Nếu bạn đang
+ghim hồ sơ theo seed thì sinh lại và ghim lại.
+
 ## 0.2.0 — 2026-09-04
 
 Bản sửa lỗi đúng đắn. **Đầu ra đổi so với 0.1.0** ở cùng một seed — có chủ ý,
