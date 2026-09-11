@@ -276,28 +276,39 @@ impl FingerprintGenerator {
         if let Some(os) = &self.os {
             // `*OPERATING_SYSTEM` node has flat values: "windows", "macos", etc.
             c.insert("*OPERATING_SYSTEM".to_string(), vec![os_family_to_key(os)]);
+        }
 
-            // RANG BUOC THANG CA HAI NUT UA THEO DAU HIEU OS.
-            //
-            // Ghim `*OPERATING_SYSTEM` la KHONG DU, du `user-agent` co no lam
-            // cha. Do 2026-09-04, `.os(windows)` khong kem `.device()` cho UA
-            // Android o 62/500 luot (12,4%).
-            //
-            // Co che: `*DEVICE` khong bi rang buoc nen boc tu do, va
-            // `windows + mobile` la to hop KHONG CO trong du lieu Apify. CPT
-            // khong co nhanh cho no, nen `traverse_cpt_and_sample` roi ve
-            // phan phoi LE - phan phoi do do Android chiem uu the, va UA
-            // Android chui ra duoi mot ho so khai Windows.
-            //
-            // Them `*DEVICE = desktop` chua duoc trieu chung (62/500 -> 0/500),
-            // nhung do la doan mot bang OS->thiet bi ma khong ai do: Surface
-            // chay Windows va la tablet. Rang buoc thang UA thi dung bat ke
-            // `*DEVICE` boc ra gi, va khong phai bia bang nao.
-            //
-            // `*MISSING_VALUE*` PHAI nam trong tap cho phep: hai nut UA la hai
-            // duong HTTP loai tru nhau (`user-agent` cho h2, `User-Agent` cho
-            // h1), nut khong duoc dung se mang gia tri do. Bo no ra thi khong
-            // mau nao thoa duoc ca hai nut cung luc.
+        // RANG BUOC THANG CA HAI NUT UA THEO MOI RANG BUOC DANG DAT.
+        //
+        // Khoi nay tung nam BEN TRONG `if let Some(os)`, va do la loi VEIL-566:
+        // `.browser()` khong duoc huong no, nen 155/6000 ho so xin Chrome nhan
+        // ve UA Safari, Firefox, Edge hoac `compatible; pageburst`. Cung mot
+        // che do hong voi VEIL-407, chi khac ten rang buoc.
+        //
+        // Hai vi tu phai GIAO NHAU chu khong duoc chay hai vong lap rieng:
+        // ca hai cung loc MOT tap gia tri cua cung MOT nut, nen vong sau se
+        // ghi de vong truoc va rang buoc dau tien bien mat khong tieng dong.
+        //
+        // Ghim `*OPERATING_SYSTEM` la KHONG DU, du `user-agent` co no lam
+        // cha. Do 2026-09-04, `.os(windows)` khong kem `.device()` cho UA
+        // Android o 62/500 luot (12,4%).
+        //
+        // Co che: `*DEVICE` khong bi rang buoc nen boc tu do, va
+        // `windows + mobile` la to hop KHONG CO trong du lieu Apify. CPT
+        // khong co nhanh cho no, nen `traverse_cpt_and_sample` roi ve
+        // phan phoi LE - phan phoi do do Android chiem uu the, va UA
+        // Android chui ra duoi mot ho so khai Windows.
+        //
+        // Them `*DEVICE = desktop` chua duoc trieu chung (62/500 -> 0/500),
+        // nhung do la doan mot bang OS->thiet bi ma khong ai do: Surface
+        // chay Windows va la tablet. Rang buoc thang UA thi dung bat ke
+        // `*DEVICE` boc ra gi, va khong phai bia bang nao.
+        //
+        // `*MISSING_VALUE*` PHAI nam trong tap cho phep: hai nut UA la hai
+        // duong HTTP loai tru nhau (`user-agent` cho h2, `User-Agent` cho
+        // h1), nut khong duoc dung se mang gia tri do. Bo no ra thi khong
+        // mau nao thoa duoc ca hai nut cung luc.
+        if self.os.is_some() || self.browser.is_some() {
             if let Ok(network) = get_header_network() {
                 for ten_nut in ["user-agent", "User-Agent"] {
                     if let Some(nut) = network.nodes.iter().find(|n| n.name == ten_nut) {
@@ -305,7 +316,14 @@ impl FingerprintGenerator {
                             .possible_values
                             .iter()
                             .map(std::string::ToString::to_string)
-                            .filter(|v| v == MISSING_VALUE || ua_khop_os(v, os))
+                            .filter(|v| {
+                                v == MISSING_VALUE
+                                    || (self.os.as_ref().map_or(true, |os| ua_khop_os(v, os))
+                                        && self
+                                            .browser
+                                            .as_ref()
+                                            .map_or(true, |b| ua_khop_browser(v, b)))
+                            })
                             .collect();
                         if !hop_le.is_empty() {
                             c.insert(ten_nut.to_string(), hop_le);
@@ -571,6 +589,49 @@ fn ua_khop_os(ua: &str, os: &OsFamily) -> bool {
     }
 }
 
+/// Chuoi User-Agent nay co phai cua ho trinh duyet do khong.
+///
+/// Song song voi `ua_khop_os`, va vi cung mot ly do: chuoi UA la thu site doc
+/// duoc, nen no moi la su that. Ghim nut `*BROWSER` khong dam bao dieu gi ve
+/// hai nut UA - xem VEIL-566.
+///
+/// Bon bay trong chinh du lieu Apify, do 2026-09-11:
+///   - UA Chrome LUON chua "like Gecko", nen khong duoc dung "Gecko" de nhan
+///     Firefox. Dau hieu Firefox la `Firefox/` (hoac `FxiOS/` tren iOS).
+///   - Edge va Opera deu mang `Chrome/`, nen Chrome phai LOAI TRU chung chu
+///     khong chi tim `Chrome/`.
+///   - Safari that co `Version/x.y Safari/z` va KHONG co `Chrome/`.
+///   - `compatible;` trong ngoac AppleWebKit la crawler tu khai
+///     ("...like Gecko; compatible; pageburst) Chrome/144..."). No mang
+///     `Chrome/` nhung khong phai Chrome cua nguoi dung, va mot ho so ban ra
+///     mang no la tu bao minh la bot.
+fn ua_khop_browser(ua: &str, browser: &BrowserFamily) -> bool {
+    let co_edge = ua.contains("Edg/")
+        || ua.contains("Edge/")
+        || ua.contains("EdgA/")
+        || ua.contains("EdgiOS/");
+    let co_opera = ua.contains("OPR/") || ua.contains("Opera");
+    let co_firefox = ua.contains("Firefox/") || ua.contains("FxiOS/");
+    let co_chrome = ua.contains("Chrome/") || ua.contains("CriOS/") || ua.contains("Chromium/");
+    let co_crawler = ua.contains("compatible;");
+    match browser {
+        BrowserFamily::Chrome => co_chrome && !co_edge && !co_opera && !co_firefox && !co_crawler,
+        BrowserFamily::Edge => co_edge && !co_opera && !co_crawler,
+        BrowserFamily::Firefox => co_firefox && !co_chrome && !co_crawler,
+        BrowserFamily::Safari => {
+            ua.contains("Safari/")
+                && ua.contains("Version/")
+                && !co_chrome
+                && !co_edge
+                && !co_opera
+                && !co_firefox
+                && !co_crawler
+        }
+        // Khong biet ho nay trong gi thi khong loc - tha rong con hon loc sai.
+        BrowserFamily::Other(_) => true,
+    }
+}
+
 /// Chuoi User-Agent ma mang header vua chon, neu co.
 ///
 /// Mang header co HAI nut UA: `user-agent` (471 gia tri, duong HTTP/2) va
@@ -700,6 +761,80 @@ mod tests {
         }
     }
 
+    /// Rang buoc `.browser()` phai toi ca `navigator.userAgent`.
+    ///
+    /// LY DO TON TAI. Day la BAN SAO cua loi VEIL-407, cho rang buoc anh em.
+    /// Ban va khi do them mot khoi kep thang hai nut UA, nhung khoi do nam
+    /// BEN TRONG `if let Some(os) = &self.os`. `.browser()` thi chi ghim
+    /// `*BROWSER` roi trong cho no lan toi hai nut UA - dung co che ma chinh
+    /// chu thich cua ban va do tuyen bo la KHONG DU.
+    ///
+    /// Do 2026-09-11 tren 0.2.1, 2000 seed moi OS, xin `.browser(Chrome)`:
+    ///
+    /// ```text
+    ///   bot-compatible            72/6000   1,20%
+    ///   safari                    33/6000   0,55%
+    ///   edge                      24/6000   0,40%
+    ///   firefox                   13/6000   0,22%
+    ///   chrome-thieu-duoi-Safari  13/6000   0,22%
+    ///                            ---------
+    ///                            155/6000   2,58%
+    /// ```
+    ///
+    /// Nguyen van vai ca:
+    ///
+    /// ```text
+    ///   (X11; Linux x86_64) ... (KHTML, like Gecko; compatible; pageburst)
+    ///       Chrome/144.0.7559.132 Safari/537.36
+    ///   (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 ...
+    ///       Version/26.3 Safari/605.1.15
+    ///   (Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0
+    /// ```
+    ///
+    /// `compatible; pageburst` la mot crawler tu khai. Mot thu vien ban ho so
+    /// "giong that" tra ve thu do khi duoc xin Chrome la sai hop dong, bat ke
+    /// no co thuc trong traffic hay khong.
+    ///
+    /// QUET, KHONG GHIM SEED - bai hoc da tra gia o VEIL-407. Voi 2,58% moi
+    /// mau va 600 mau, xac suat mot ban hong lot qua la (1-0,0258)^600 ~ 2e-7.
+    #[test]
+    fn rang_buoc_browser_toi_duoc_user_agent() {
+        for os in [OsFamily::Windows, OsFamily::MacOs, OsFamily::Linux] {
+            for seed in 0..200u64 {
+                let p = FingerprintGenerator::new()
+                    .seeded(seed)
+                    .browser(BrowserFamily::Chrome)
+                    .os(os.clone())
+                    .generate()
+                    .expect("phai sinh duoc");
+                let ua = &p.fingerprint.navigator.user_agent;
+                // KHANG DINH VIET THANG, KHONG GOI `ua_khop_browser`.
+                //
+                // Ban dau cho nay goi chinh vi tu ma rang buoc dung, va mot
+                // luot pha hoai (cho vi tu luon tra `true`) VAN XANH: dot bien
+                // lam rong CA bo loc LAN khang dinh cung luc. Do la cong giả
+                // dang thu hai trong repo nay - khac hinh dang voi cai ghim-8-
+                // seed cua VEIL-407, cung mot hau qua.
+                //
+                // Khang dinh phai doc duoc doc lap voi cai dat thi moi canh
+                // duoc cai dat.
+                let la_chrome =
+                    ua.contains("Chrome/") || ua.contains("CriOS/") || ua.contains("Chromium/");
+                let co_ho_khac = ua.contains("Edg/")
+                    || ua.contains("Edge/")
+                    || ua.contains("OPR/")
+                    || ua.contains("Firefox/")
+                    || ua.contains("AppleWebKit/605")
+                    || ua.contains("compatible;");
+                assert!(
+                    la_chrome && !co_ho_khac,
+                    "os={os:?} seed={seed}: xin Chrome nhung UA khong phai Chrome\n  \
+                     navigator.user_agent = {ua}",
+                );
+            }
+        }
+    }
+
     /// Rang buoc `.os()` phai toi ca `navigator.userAgent`, khong chi
     /// `operating_system.name`.
     ///
@@ -724,18 +859,32 @@ mod tests {
     /// trong khi loi nay hien dien toan phan. Test nay kiem dau ra.
     ///
     /// PHAM VI: test nay canh `navigator.userAgent`, KHONG canh
-    /// `navigator.platform`. Do 2026-09-04, `platform` van lech OS o 5%
-    /// (Windows) va 13% (macOS) so mau - va do KHONG phai loi cua ma nay:
-    /// chinh CPT cua bo du lieu Apify chua no.
+    /// `navigator.platform`.
+    ///
+    /// CHU THICH NAY TUNG KHAI MOT CON SO DA CU, va no da lam mot nguoi doc
+    /// chan doan sai (2026-09-11). Ban truoc viet: "`platform` van lech OS o
+    /// 5% (Windows) va 13% (macOS)", do ngay 2026-09-04. Con so do dung LUC DO
+    /// nhung 0.2.0 va 0.2.1 da sua chinh duong ay. Do lai tren 0.2.1, cung
+    /// phuong phap, 2000 seed moi OS:
+    ///
+    /// ```text
+    ///               ua_lech    platform_lech
+    ///   Windows     0/2000        0/2000
+    ///   macOS       0/2000        0/2000
+    ///   Linux       4/2000       64/2000   <- 63 trong so do la platform
+    ///                                         "Linux" tran, mot gia tri HOP LE
+    /// ```
+    ///
+    /// Phat hien goc thi van dung va van dang giu: tap Apify cao tu traffic
+    /// that, trong do co may DANG SPOOF HONG (Linux gia Windows bang UA nhung
+    /// ro navigator.platform), vi du mot CPT that:
     ///
     ///     UA "Mozilla/5.0 (Windows NT 10.0; Win64; x64)..."
     ///        -> {"Linux x86_64": 0.979, "Win32": 0.021}
-    ///     34/83 UA Windows co CPT platform lan sang OS khac
     ///
-    /// Tap do cao tu traffic that, trong do co may DANG SPOOF HONG (Linux gia
-    /// Windows bang UA nhung ro navigator.platform). Lay mau trung thanh tu
-    /// no thi tai tao luon cai spoof hong cua nguoi khac. Do la mot bai toan
-    /// khac - can mot tang kiem nhat quan tren bo sinh, khong phai sua sampler.
+    /// Lay mau trung thanh tu mot tap nhu vay thi tai tao luon cai spoof hong
+    /// cua nguoi khac. Ket luan giu nguyen - can mot tang kiem nhat quan tren
+    /// bo sinh - chi co TI LE la da khac. Xem `platform_version_dung_dang_*`.
     #[test]
     fn rang_buoc_os_toi_duoc_user_agent() {
         for os in [OsFamily::Windows, OsFamily::MacOs, OsFamily::Linux] {
