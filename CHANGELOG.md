@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.2.2 — 2026-09-11
+
+Một bản sửa lỗi. **Đầu ra đổi so với 0.2.1** ở cùng một seed — 2,58% hồ sơ xin
+Chrome trước đây nhận về user agent của họ khác, nay không còn. Không có thay
+đổi API: không một mục `pub` nào đổi chữ ký.
+
+### Sửa lỗi
+
+**`.browser()` không tới được `navigator.userAgent`.** Xin `.browser(Chrome)`
+và nhận về UA của Safari, Firefox, Edge, hoặc một crawler tự khai. Đo 2000 seed
+mỗi OS trên 0.2.1:
+
+```
+bot-compatible            72/6000   1,20%
+safari                    33/6000   0,55%
+edge                      24/6000   0,40%
+firefox                   13/6000   0,22%
+chrome-thieu-duoi-Safari  13/6000   0,22%
+                         ---------
+                         155/6000   2,58%   ->  0/6000 sau bản sửa
+```
+
+Nguyên văn một ca mỗi loại:
+
+```
+...(KHTML, like Gecko; compatible; pageburst) Chrome/144.0.7559.132 ...
+...AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.3 Safari/605.1.15
+...(Windows NT 10.0; Win64; x64; rv:147.0) Gecko/20100101 Firefox/147.0
+```
+
+Đây là **bản sao của lỗi đã sửa ở 0.2.0 cho `.os()`**, cho ràng buộc anh em:
+khối kẹp thẳng hai nút UA nằm bên trong nhánh `os`, nên `.browser()` không được
+hưởng nó và chỉ ghim nút `*BROWSER` rồi trông chờ nó lan xuống — đúng cơ chế mà
+chú thích của chính bản vá đó tuyên bố là không đủ. Bản sửa nâng khối kẹp ra
+ngoài và cho hai vị từ **giao nhau**.
+
+Thêm `ua_khop_browser`, song song với `ua_khop_os`. Bốn bẫy trong dữ liệu, ghi
+ở docstring: UA Chrome luôn chứa `like Gecko` nên không được nhận Firefox bằng
+`Gecko`; Edge và Opera đều mang `Chrome/`; Safari thật có `Version/` và không
+có `Chrome/`; `compatible;` trong ngoặc AppleWebKit là crawler tự khai.
+
+### Ghi chú cho người đọc mã
+
+Cổng canh đầu tiên viết cho bản sửa này là **cổng giả**: khẳng định gọi chính
+vị từ mà ràng buộc dùng, nên một lượt phá hoại (cho vị từ luôn trả `true`) vẫn
+xanh — đột biến làm rỗng cả bộ lọc lẫn khẳng định cùng lúc. Khẳng định hiện tại
+viết thẳng bằng `contains` và đọc được độc lập với cài đặt.
+
 ## 0.2.1 — 2026-09-05
 
 Nối tiếp 0.2.0. **Đầu ra đổi so với 0.2.0** ở cùng một seed — có chủ ý, xem
