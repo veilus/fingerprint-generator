@@ -10,6 +10,8 @@
 
 Drop-in Rust alternative to Python's [`browserforge`](https://github.com/daijro/browserforge) with full feature parity: navigator, screen, UA Client Hints, WebGL, codecs, battery, fonts, plugins, multimedia devices, and WebRTC flag.
 
+Feature parity, not output parity — see the [Intentional differences](#-intentional-differences-from-browserforge) section below.
+
 ---
 
 ## ✨ Key Features
@@ -117,7 +119,9 @@ pub struct BrowserProfile {
 
 ### `BrowserFingerprint` — Full Fingerprint Data
 
-All fields match [`browserforge`](https://github.com/daijro/browserforge) output 1:1 with `camelCase` JSON serialization:
+The **field set and JSON shape** match [`browserforge`](https://github.com/daijro/browserforge) 1:1, with `camelCase` serialization — a `browserforge` consumer can read this output unchanged.
+
+> **Values are not guaranteed identical.** Since v0.2.0 this library corrects several internal-consistency defects that `browserforge` inherits from the shared training data, so the same constraints can yield different values. Every known difference is listed in the [Intentional differences](#-intentional-differences-from-browserforge) section below.
 
 ```rust
 pub struct BrowserFingerprint {
@@ -486,6 +490,35 @@ let assignment = sample_constrained(network, &constraints, &mut rng)?;
 ```
 
 ---
+
+## ⚖️ Intentional differences from browserforge
+
+`browserforge` and this library sample from the same Apify dataset, and that dataset is scraped
+from real traffic — which includes machines running broken spoofers. Several conditional
+probability tables therefore contain internally contradictory combinations.
+
+Since **v0.2.0** this library rejects those combinations instead of reproducing them. Given the
+same constraints, output can differ from `browserforge`. Each difference below is a deliberate
+correction, with the measurement that motivated it.
+
+| # | Area | `browserforge` behaviour | This library, since | Measured before the fix |
+|---|------|--------------------------|---------------------|-------------------------|
+| 1 | `.os()` constraint | Constrains `operatingSystem.name` only; `navigator.userAgent` may name a different OS | v0.2.0 | `os=Windows` → non-Windows UA in **930/2000** seeds (46.5%); `os=Linux` → **1715/2000** (85.8%). One seed produced a profile naming **three** operating systems at once |
+| 2 | `platform` | Sampled from a CPT that can contradict the already-clamped `userAgent` | v0.2.0 | **34/83** Windows user agents had a `platform` CPT leaking to another OS; one gave `Linux x86_64` with probability **1.0** |
+| 3 | UA Client Hints | `userAgentData` filtered on `platform` only; `architecture` taken from data | v0.2.1 | Blocks declaring `platform: Windows` alongside `platformVersion: 10.0` — a pair no Chrome sends. Inconsistency **11.9% → 8.5%**; `architecture` is now derived from the GPU renderer, which is a pure function |
+| 4 | `.browser()` constraint | Constrains browser name only; `userAgent` may belong to another browser family | v0.2.2 | **155/6000** seeds returned a UA from the wrong family (Safari, Edge, Firefox, bot-compatible) → **0/6000** after the fix |
+
+Two further changes are *not* divergences and are listed only to prevent confusion:
+
+- **`seeded()` reproducibility** (v0.2.0) fixed a defect specific to this implementation:
+  `CptNode` used `HashMap`, whose iteration order is randomised per process, so identical seeds
+  produced different fingerprints across runs (three distinct digests from one binary). Python
+  dicts are insertion-ordered, so `browserforge` never had this problem. The fix restores parity
+  rather than breaking it.
+- **`.device()` constraint** (v0.1.x) *added* a capability `browserforge` already had.
+
+If you need bug-compatible output, pin `0.1.0`. For any other use, the differences above are the
+reason to prefer this library.
 
 ## 🔍 browserforge Feature Parity
 
