@@ -1,0 +1,61 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+
+# Repo nay CONG KHAI va `allow_forking=true`, nen mot PR tu fork bat ky chay
+# duoc code tuy y trong job nay. Do la ly do no PHAI o tren runner cua GitHub.
+#
+# TUYET DOI KHONG doi sang `[self-hosted, macm3]`. Runner do chay duoi tai
+# khoan that cua dev, cung `$HOME` voi khoa SSH, token crates.io va cay
+# chromium 138G. Xem CLAUDE.md §3.7 cua repo goc — dieu cam do khong co ngoai
+# le, va no ap dung dung cho repo nay.
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+jobs:
+    check:
+        name: fmt + clippy + test
+        runs-on: ubuntu-latest
+        # Mac dinh cua GitHub la 360 phut. Bo test nay do duoc ~18 giay tren
+        # may dev; 15 phut la tran rong rai chu khong phai uoc luong.
+        timeout-minutes: 15
+        steps:
+            # Ghim theo SHA chu khong theo tag: tag la con tro di dong, nguoi
+            # giu action doi duoc bat cu luc nao. Tag cu ghi o chu thich cuoi
+            # dong de nguoi doc van biet dang o ban nao.
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+            # Ghim SHA thi phai khai `toolchain` tuong minh: action nay chon
+            # toolchain theo TEN REF, nen ghim SHA cua nhanh `stable` van giu
+            # mac dinh do nhung de ngam thi mat nua loi ich.
+            - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+              with:
+                  toolchain: stable
+                  components: rustfmt, clippy
+
+            # An toan o day, va ly do dang ghi ra vi no NGUOC voi repo goc:
+            # post-step cua action nay don `~/.cargo/bin` va tung xoa mat rustup
+            # cua dev tren `macm3` (VEIL-548). Tren runner cua GitHub thi may la
+            # VM dung-mot-lan, `$HOME` khong thuoc ve ai, nen khong co gi de pha.
+            - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+            - name: cargo fmt
+              run: cargo fmt --all --check
+
+            # `--locked` co y: `Cargo.lock` CO duoc commit trong repo nay, nen
+            # cong phai kiem dung thu da khoa. Thieu co nay thi cargo duoc phep
+            # tu cap nhat lock va cong se do mot thu khac voi thu nguoi ta clone.
+            - name: cargo clippy
+              run: cargo clippy --locked --workspace --all-targets -- -D warnings
+
+            # `--no-fail-fast` KHONG phai tuy chon. Thieu no thi cargo dung o
+            # target do dau tien va bo qua phan con lai — do tren repo goc
+            # 2026-08-26: ban fail-fast bao 587 pass / 1 fail trong khi that ra
+            # la 808 pass / 20 fail. Mot cong kiem noi doi te hon khong co cong.
+            - name: cargo test
+              run: cargo test --locked --workspace --no-fail-fast
