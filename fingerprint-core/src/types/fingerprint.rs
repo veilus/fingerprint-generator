@@ -441,8 +441,17 @@ mod tests {
             has_hdr: None,
         };
         let json = serde_json::to_value(&screen).unwrap();
-        assert!(json.get("devicePixelRatio").is_some(), "devicePixelRatio must be camelCase");
-        assert!(json.get("availWidth").is_some(), "availWidth must be camelCase");
-        assert!(json.get("innerWidth").is_some(), "innerWidth must be camelCase");
+        assert!(
+            json.get("devicePixelRatio").is_some(),
+            "devicePixelRatio must be camelCase"
+        );
+        assert!(
+            json.get("availWidth").is_some(),
+            "availWidth must be camelCase"
+        );
+        assert!(
+            json.get("innerWidth").is_some(),
+            "innerWidth must be camelCase"
+        );
     }
 }

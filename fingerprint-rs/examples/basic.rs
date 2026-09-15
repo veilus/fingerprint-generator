@@ -18,16 +18,29 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("━━━ 1. Random Fingerprint ━━━");
     let profile = FingerprintGenerator::random()?;
-    println!("  Browser    : {} {}", profile.browser.name, profile.browser.version);
-    println!("  OS         : {} ({:?})", profile.operating_system.name, profile.operating_system.family);
+    println!(
+        "  Browser    : {} {}",
+        profile.browser.name, profile.browser.version
+    );
+    println!(
+        "  OS         : {} ({:?})",
+        profile.operating_system.name, profile.operating_system.family
+    );
     println!("  Device     : {:?}", profile.device);
-    println!("  UserAgent  : {}", profile.fingerprint.navigator.user_agent);
-    println!("  Screen     : {}×{} @ {:.1}x DPR",
+    println!(
+        "  UserAgent  : {}",
+        profile.fingerprint.navigator.user_agent
+    );
+    println!(
+        "  Screen     : {}×{} @ {:.1}x DPR",
         profile.fingerprint.screen.width,
         profile.fingerprint.screen.height,
         profile.fingerprint.screen.device_pixel_ratio,
     );
-    println!("  Headers    : {} http headers generated", profile.headers.len());
+    println!(
+        "  Headers    : {} http headers generated",
+        profile.headers.len()
+    );
     println!();
 
     // ── 2. Browser constraint ─────────────────────────────────────────────
@@ -36,9 +49,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .browser(BrowserFamily::Chrome)
         .os(OsFamily::Windows)
         .generate()?;
-    println!("  Browser    : {} {}  ✓", profile.browser.name, profile.browser.version);
+    println!(
+        "  Browser    : {} {}  ✓",
+        profile.browser.name, profile.browser.version
+    );
     println!("  OS         : {}  ✓", profile.operating_system.name);
-    println!("  UA Data    : {}", if profile.fingerprint.navigator.user_agent_data.is_some() { "present ✓" } else { "absent" });
+    println!(
+        "  UA Data    : {}",
+        if profile.fingerprint.navigator.user_agent_data.is_some() {
+            "present ✓"
+        } else {
+            "absent"
+        }
+    );
     println!();
 
     // ── 3. Seeded (deterministic) ─────────────────────────────────────────
@@ -54,7 +77,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Seed       : {seed}");
     println!("  UA (run 1) : {}", p1.fingerprint.navigator.user_agent);
     println!("  UA (run 2) : {}", p2.fingerprint.navigator.user_agent);
-    println!("  Match?     : {} ✓", p1.fingerprint.navigator.user_agent == p2.fingerprint.navigator.user_agent);
+    println!(
+        "  Match?     : {} ✓",
+        p1.fingerprint.navigator.user_agent == p2.fingerprint.navigator.user_agent
+    );
     println!("  IDs differ : {} (always unique)", p1.id != p2.id);
     println!();
 

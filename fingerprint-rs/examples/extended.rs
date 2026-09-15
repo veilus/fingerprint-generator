@@ -17,9 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("╚══════════════════════════════════════════════════╝");
     println!();
 
-    let profile = FingerprintGenerator::new()
-        .seeded(777)
-        .generate()?;
+    let profile = FingerprintGenerator::new().seeded(777).generate()?;
 
     let fp = &profile.fingerprint;
     let nav = &fp.navigator;
@@ -29,7 +27,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  userAgent       : {}", nav.user_agent);
     println!("  platform        : {}", nav.platform);
     println!("  hardwareConcur. : {}", nav.hardware_concurrency);
-    println!("  deviceMemory    : {:.0}", nav.device_memory.unwrap_or(0.0));
+    println!(
+        "  deviceMemory    : {:.0}",
+        nav.device_memory.unwrap_or(0.0)
+    );
     println!("  vendor          : {}", nav.vendor);
     println!("  language        : {}", nav.language);
     println!("  webdriver       : {} (always false)", nav.webdriver);

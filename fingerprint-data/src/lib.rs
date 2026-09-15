@@ -17,8 +17,7 @@ pub mod network;
 ///
 /// Validated at compile time by `build.rs`. Sourced from the Apify `header-generator`
 /// npm package (Apache-2.0 license).
-pub const HEADER_NETWORK_BYTES: &[u8] =
-    include_bytes!("../data/header-network-definition.zip");
+pub const HEADER_NETWORK_BYTES: &[u8] = include_bytes!("../data/header-network-definition.zip");
 
 /// Raw bytes of the embedded fingerprint Bayesian network ZIP.
 ///

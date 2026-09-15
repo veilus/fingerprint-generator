@@ -30,16 +30,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let n = 1000;
     let start = Instant::now();
     for i in 0..n {
-        let _profile = FingerprintGenerator::new()
-            .seeded(i)
-            .generate()?;
+        let _profile = FingerprintGenerator::new().seeded(i).generate()?;
     }
     let elapsed = start.elapsed();
     let per_call = elapsed / n as u32;
 
     println!("Warm ({n} iterations): {:?} total", elapsed);
     println!("  Per call: {:?}", per_call);
-    println!("  Throughput: {:.0} fingerprints/sec", n as f64 / elapsed.as_secs_f64());
+    println!(
+        "  Throughput: {:.0} fingerprints/sec",
+        n as f64 / elapsed.as_secs_f64()
+    );
     println!();
 
     // ── With constraints ──────────────────────────────────────────────────
@@ -55,9 +56,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let elapsed = start.elapsed();
     let per_call = elapsed / n as u32;
 
-    println!("Constrained Chrome+Windows ({n} iterations): {:?} total", elapsed);
+    println!(
+        "Constrained Chrome+Windows ({n} iterations): {:?} total",
+        elapsed
+    );
     println!("  Per call: {:?}", per_call);
-    println!("  Throughput: {:.0} fingerprints/sec", n as f64 / elapsed.as_secs_f64());
+    println!(
+        "  Throughput: {:.0} fingerprints/sec",
+        n as f64 / elapsed.as_secs_f64()
+    );
 
     Ok(())
 }

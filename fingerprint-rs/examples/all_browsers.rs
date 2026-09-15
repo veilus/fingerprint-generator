@@ -21,10 +21,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let configs: Vec<(&str, BrowserFamily, OsFamily)> = vec![
         ("Chrome/Windows", BrowserFamily::Chrome, OsFamily::Windows),
-        ("Chrome/macOS",   BrowserFamily::Chrome, OsFamily::MacOs),
-        ("Firefox/Linux",  BrowserFamily::Firefox, OsFamily::Linux),
-        ("Safari/macOS",   BrowserFamily::Safari, OsFamily::MacOs),
-        ("Edge/Windows",   BrowserFamily::Edge, OsFamily::Windows),
+        ("Chrome/macOS", BrowserFamily::Chrome, OsFamily::MacOs),
+        ("Firefox/Linux", BrowserFamily::Firefox, OsFamily::Linux),
+        ("Safari/macOS", BrowserFamily::Safari, OsFamily::MacOs),
+        ("Edge/Windows", BrowserFamily::Edge, OsFamily::Windows),
         ("Chrome/Android", BrowserFamily::Chrome, OsFamily::Android),
     ];
 
@@ -44,11 +44,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Platform   : {}", nav.platform);
         println!("  HW Cores   : {}", nav.hardware_concurrency);
         println!("  Memory     : {:.0} GB", nav.device_memory.unwrap_or(0.0));
-        println!("  Screen     : {}×{}", profile.fingerprint.screen.width, profile.fingerprint.screen.height);
-        println!("  WebRTC     : {:?}", profile.fingerprint.mock_web_rtc.unwrap_or(false));
+        println!(
+            "  Screen     : {}×{}",
+            profile.fingerprint.screen.width, profile.fingerprint.screen.height
+        );
+        println!(
+            "  WebRTC     : {:?}",
+            profile.fingerprint.mock_web_rtc.unwrap_or(false)
+        );
 
         if let Some(uad) = &nav.user_agent_data {
-            let brands: Vec<String> = uad.brands.iter().map(|b| format!("{} v{}", b.brand, b.version)).collect();
+            let brands: Vec<String> = uad
+                .brands
+                .iter()
+                .map(|b| format!("{} v{}", b.brand, b.version))
+                .collect();
             println!("  UA Hints   : [{}]", brands.join(", "));
         } else {
             println!("  UA Hints   : (none — non-Chromium)");

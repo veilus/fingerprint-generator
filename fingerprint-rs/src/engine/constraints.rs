@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
+use rand::Rng;
 use veilus_fingerprint_core::FingerprintError;
 use veilus_fingerprint_data::network::BayesianNetwork;
-use rand::Rng;
 
 use super::sampler::sample_ancestral;
 
@@ -80,9 +80,9 @@ pub fn sample_constrained(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use veilus_fingerprint_data::loader::{get_fingerprint_network, get_header_network};
     use rand::SeedableRng;
     use rand_chacha::ChaCha8Rng;
+    use veilus_fingerprint_data::loader::{get_fingerprint_network, get_header_network};
 
     #[test]
     fn header_browser_prefix_constraint_always_satisfied() {
@@ -147,17 +147,11 @@ mod tests {
 
         let mut constraints = Constraints::new();
         // "netscape99/1.0" is not a real browser value — no data exists for it
-        constraints.insert(
-            "*BROWSER".to_string(),
-            vec!["netscape99/1.0".to_string()],
-        );
+        constraints.insert("*BROWSER".to_string(), vec!["netscape99/1.0".to_string()]);
 
         let result = sample_constrained(network, &constraints, &mut rng);
         assert!(
-            matches!(
-                result,
-                Err(FingerprintError::ConstraintsTooRestrictive(_))
-            ),
+            matches!(result, Err(FingerprintError::ConstraintsTooRestrictive(_))),
             "Impossible constraint must return ConstraintsTooRestrictive, got: {:?}",
             result.err()
         );

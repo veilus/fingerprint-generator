@@ -179,7 +179,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn browser_profile_roundtrip() {
         let profile = make_test_profile();
@@ -201,8 +200,17 @@ mod tests {
     fn json_has_camel_case_fields() {
         let profile = make_test_profile();
         let json = serde_json::to_value(&profile).unwrap();
-        assert!(json.get("generatedAt").is_some(), "generatedAt must be camelCase");
-        assert!(json.get("datasetVersion").is_some(), "datasetVersion must be camelCase");
-        assert!(json.get("operatingSystem").is_some(), "operatingSystem must be camelCase");
+        assert!(
+            json.get("generatedAt").is_some(),
+            "generatedAt must be camelCase"
+        );
+        assert!(
+            json.get("datasetVersion").is_some(),
+            "datasetVersion must be camelCase"
+        );
+        assert!(
+            json.get("operatingSystem").is_some(),
+            "operatingSystem must be camelCase"
+        );
     }
 }

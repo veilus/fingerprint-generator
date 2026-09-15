@@ -14,9 +14,7 @@
 use veilus_fingerprint::FingerprintGenerator;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let profile = FingerprintGenerator::new()
-        .seeded(12345)
-        .generate()?;
+    let profile = FingerprintGenerator::new().seeded(12345).generate()?;
 
     // Full JSON output — compare directly with browserforge
     let json = serde_json::to_string_pretty(&profile)?;

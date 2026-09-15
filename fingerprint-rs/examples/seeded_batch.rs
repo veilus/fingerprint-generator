@@ -22,13 +22,12 @@ fn session_seed(session_id: &str) -> u64 {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let sessions = [
-        "user-alice-2024",
-        "user-bob-2024",
-        "user-charlie-2024",
-    ];
+    let sessions = ["user-alice-2024", "user-bob-2024", "user-charlie-2024"];
 
-    println!("{:<20} {:<10} {:<12} User-Agent (first 60 chars)", "Session", "Browser", "OS");
+    println!(
+        "{:<20} {:<10} {:<12} User-Agent (first 60 chars)",
+        "Session", "Browser", "OS"
+    );
     println!("{}", "-".repeat(110));
 
     for session in &sessions {
@@ -49,19 +48,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         println!(
             "{:<20} {:<10} {:<12} {}…",
-            session,
-            profile.browser.name,
-            profile.operating_system.name,
-            ua_preview
+            session, profile.browser.name, profile.operating_system.name, ua_preview
         );
     }
 
     println!();
     println!("Re-running with the same sessions produces IDENTICAL profiles:");
     let seed = session_seed("user-alice-2024");
-    let p1 = FingerprintGenerator::new().seeded(seed).browser(BrowserFamily::Chrome).os(OsFamily::Windows).generate()?;
-    let p2 = FingerprintGenerator::new().seeded(seed).browser(BrowserFamily::Chrome).os(OsFamily::Windows).generate()?;
-    println!("Match: {}", p1.fingerprint.navigator.user_agent == p2.fingerprint.navigator.user_agent);
+    let p1 = FingerprintGenerator::new()
+        .seeded(seed)
+        .browser(BrowserFamily::Chrome)
+        .os(OsFamily::Windows)
+        .generate()?;
+    let p2 = FingerprintGenerator::new()
+        .seeded(seed)
+        .browser(BrowserFamily::Chrome)
+        .os(OsFamily::Windows)
+        .generate()?;
+    println!(
+        "Match: {}",
+        p1.fingerprint.navigator.user_agent == p2.fingerprint.navigator.user_agent
+    );
 
     Ok(())
 }

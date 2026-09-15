@@ -75,6 +75,10 @@ mod tests {
     fn fingerprint_network_has_correct_node_count() {
         let net = get_fingerprint_network().expect("must load");
         // Apify fingerprint network has 25 nodes based on inspection
-        assert_eq!(net.nodes.len(), 25, "fingerprint network must have 25 nodes");
+        assert_eq!(
+            net.nodes.len(),
+            25,
+            "fingerprint network must have 25 nodes"
+        );
     }
 }
