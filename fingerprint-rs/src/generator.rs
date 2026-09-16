@@ -1583,6 +1583,67 @@ mod tests {
         assert_eq!(profile.device, DeviceType::Desktop);
         assert_eq!(profile.browser.family, BrowserFamily::Chrome);
     }
+    /// Hai truong sua o 0.2.3 phai cho GIA TRI DUNG, khong chi `Some`.
+    ///
+    /// `Some` va "dung" la hai chuyen khac nhau. Mot bo giai ma chap nhan moi
+    /// thu roi tra gia tri rong cung cho 100% `Some` — va cong ti le o tren se
+    /// xanh. Bai nay canh phan con lai.
+    ///
+    /// `multimedia_devices`: du lieu Apify co 11 hinh dang
+    /// `(speakers, micros, webcams)` tren lat du lieu nay, gom ca `(0,0,0)` va
+    /// `(1,0,1)`. Neu bo dem hong va luon tra 0 thi van `Some` — nen doi NHIEU
+    /// hon mot hinh dang.
+    ///
+    /// `plugins_data.mime_types`: chuoi cap tren co dang
+    /// `description~~type~~suffixes`. Neu tach sai thu tu thi `mime_type` se ra
+    /// phan mo ta thay vi kieu MIME.
+    ///
+    /// Khang dinh chi ap cho `mime_type` KHAC RONG, va do la mot phep do chu
+    /// khong phai mot nhuong bo. Du lieu that co o trong: 253/1371 chuoi co
+    /// `type` rong va 312/1371 co `description` rong — `"~~application/pdf~~pdf"`
+    /// la dang co that. Ban dau cua bai nay doi `description` khac rong va do
+    /// ngay, vi toi khang dinh truoc khi do.
+    #[test]
+    fn hai_truong_sua_o_023_cho_gia_tri_dung_chu_khong_chi_some() {
+        let mut hinh_dang = std::collections::HashSet::new();
+        let mut da_thay_mime = false;
+        for seed in 0..150u64 {
+            let p = FingerprintGenerator::new()
+                .seeded(seed)
+                .generate()
+                .expect("phai sinh duoc");
+            let f = &p.fingerprint;
+
+            if let Some(m) = &f.multimedia_devices {
+                hinh_dang.insert((m.speakers, m.micros, m.webcams));
+            }
+            if let Some(pd) = &f.plugins_data {
+                for mt in pd.mime_types.iter().flatten() {
+                    if mt.mime_type.is_empty() {
+                        continue;
+                    }
+                    assert!(
+                        mt.mime_type.contains('/'),
+                        "mime_type {:?} khong chua '/' — tach sai thu tu \
+                         description~~type~~suffixes?",
+                        mt.mime_type
+                    );
+                    da_thay_mime = true;
+                }
+            }
+        }
+        assert!(
+            hinh_dang.len() > 1,
+            "150 ho so ra cung mot hinh dang multimedia {hinh_dang:?} — \
+             bo dem co dang luon tra 0 khong?"
+        );
+        assert!(
+            da_thay_mime,
+            "khong ho so nao co mimeTypes cap tren voi type khac rong — \
+             bai nay chua kiem gi"
+        );
+    }
+
     /// Moi truong `Option` phai duoc dien o TI LE DA DO — khong truong nao
     /// duoc am tham tut ve `None`.
     ///
@@ -1657,10 +1718,13 @@ mod tests {
             ("fonts", 60.0, 100.0),
             ("mock_web_rtc", 60.0, 100.0),
             ("battery", 60.0, 100.0),
-            // HONG — xem docstring. Tran giu thap DE CONG DO khi kieu duoc sua;
-            // do la nua con lai cua khoa hai chieu.
-            ("plugins_data", 0.0, 25.0),
-            ("multimedia_devices", 0.0, 0.0),
+            // 0.2.3 sua kieu cho hai truong duoi. Truoc do:
+            //   plugins_data        7,3%  (tran cu 25,0)
+            //   multimedia_devices  0,0%  (tran cu  0,0)
+            // Chinh cong nay bat phai sua bang: no do o VE TRAN voi
+            // "plugins_data: 100.0% > tran 25.0% — truong nay TOT LEN".
+            ("plugins_data", 60.0, 100.0),
+            ("multimedia_devices", 60.0, 100.0),
         ];
 
         for (i, (ten, san, tran)) in bang.iter().enumerate() {

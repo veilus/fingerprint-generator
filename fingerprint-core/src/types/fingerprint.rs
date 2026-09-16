@@ -1,4 +1,77 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
+
+/// Dem thiet bi: chap nhan CA mang LAN so.
+///
+/// Tap Apify ghi `multimediaDevices` duoi dang MANG doi tuong thiet bi —
+/// `{"speakers":[{...}],"micros":[...],"webcams":[...]}` — con kieu cong khai
+/// o day la so dem, dung nhu README mo ta ("Number of audio output devices").
+///
+/// Truoc 0.2.3 `serde` gap mang roi that bai, va `parse_stringified` nuot loi
+/// bang `.ok()`, nen CA `MultimediaDevices` tra `None`. Do tren 1500 ho so:
+/// 0/1500. Truong nay duoc README danh dau ✅ trong suot thoi gian do.
+///
+/// Chap nhan ca hai dang chu khong chi mang: neu thuong nguon doi sang ghi so
+/// dem thi ban nay van doc duoc, thay vi hong im lang lan nua.
+fn dem_thiet_bi<'de, D: Deserializer<'de>>(d: D) -> Result<u8, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum MangHoacSo {
+        Mang(Vec<serde::de::IgnoredAny>),
+        So(u8),
+    }
+    Ok(match MangHoacSo::deserialize(d)? {
+        MangHoacSo::Mang(v) => u8::try_from(v.len()).unwrap_or(u8::MAX),
+        MangHoacSo::So(n) => n,
+    })
+}
+
+/// `mimeTypes` cap tren: chap nhan CA doi tuong LAN chuoi `desc~~type~~suffixes`.
+///
+/// Hai cho trong cung mot khoi du lieu mang ten `mimeTypes` nhung KHAC DANG —
+/// va chinh su trung ten do la ly do lo hong nay song sot lau:
+///
+/// ```text
+/// plugins[].mimeTypes   6342 doi tuong {type, suffixes, description, enabledPlugin}
+/// mimeTypes (cap tren)  1371 CHUOI     "Portable Document Format~~application/pdf~~pdf"
+/// ```
+///
+/// Ca 1371 chuoi deu co dung hai dau `~~`, theo thu tu description, type,
+/// suffixes. Phan tich chung KHONG phai bia: ba truong nam san trong chuoi.
+/// `enabled_plugin` de `None` vi chuoi khong mang no.
+///
+/// Truoc 0.2.3 kieu chi nhan doi tuong, nen mot chuoi lam CA `PluginsData` that
+/// bai. Do: 109/1500 (7,3%) — phan con lai la nhung mau khong co `mimeTypes`
+/// cap tren nen tinh co doc duoc.
+fn mime_types_linh_hoat<'de, D: Deserializer<'de>>(
+    d: D,
+) -> Result<Option<Vec<PluginMimeType>>, D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Muc {
+        DoiTuong(PluginMimeType),
+        Chuoi(String),
+    }
+    let tho: Option<Vec<Muc>> = Option::deserialize(d)?;
+    Ok(tho.map(|v| {
+        v.into_iter()
+            .map(|m| match m {
+                Muc::DoiTuong(x) => x,
+                Muc::Chuoi(s) => {
+                    let mut phan = s.splitn(3, "~~");
+                    let description = phan.next().unwrap_or_default().to_string();
+                    let mime_type = phan.next().unwrap_or_default().to_string();
+                    let suffixes = phan.next().unwrap_or_default().to_string();
+                    PluginMimeType {
+                        mime_type,
+                        suffixes,
+                        description,
+                        enabled_plugin: None,
+                    }
+                }
+            })
+            .collect()
+    }))
+}
 
 /// A brand-version pair from the User-Agent Client Hints API.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -222,10 +295,13 @@ pub struct Battery {
 #[serde(rename_all = "camelCase")]
 pub struct MultimediaDevices {
     /// Number of audio output devices.
+    #[serde(deserialize_with = "dem_thiet_bi")]
     pub speakers: u8,
     /// Number of audio input devices.
+    #[serde(deserialize_with = "dem_thiet_bi")]
     pub micros: u8,
     /// Number of video input devices.
+    #[serde(deserialize_with = "dem_thiet_bi")]
     pub webcams: u8,
 }
 
@@ -267,7 +343,11 @@ pub struct PluginsData {
     /// Installed browser plugins.
     pub plugins: Vec<Plugin>,
     /// Registered MIME types.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "mime_types_linh_hoat",
+        default
+    )]
     pub mime_types: Option<Vec<PluginMimeType>>,
 }
 

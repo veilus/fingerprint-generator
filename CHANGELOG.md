@@ -1,5 +1,79 @@
 # Changelog
 
+## 0.2.3 — 2026-09-16
+
+Sửa lỗi. **Không đổi chữ ký công khai nào** — hai bản vá dưới đây đi qua
+`deserialize_with`, nên kiểu vẫn y nguyên.
+
+### Hai trường luôn trả `None`, và không ai biết
+
+`assembler::parse_stringified` kết thúc bằng `.ok()`. Một kiểu không khớp hình
+dạng dữ liệu vì thế trả `None` và **không báo gì**. Đo trên 1500 hồ sơ
+(500 seed × 3 OS):
+
+```
+video_card · audio_codecs · video_codecs · fonts · mock_web_rtc  100%
+battery                                                          99,1%
+plugins_data                                                      7,3%   <- hỏng
+multimedia_devices                                                  0%   <- hỏng
+```
+
+Cả hai được README đánh dấu ✅ trong bảng feature-parity suốt thời gian đó.
+
+**`multimedia_devices` — 0/1500.** Kiểu khai `speakers/micros/webcams: u8`,
+nhưng dữ liệu Apify mang **mảng đối tượng thiết bị**:
+`{"speakers":[{...}],"micros":[...],"webcams":[...]}`. Nay đếm độ dài mảng,
+đúng như README vẫn mô tả (*"Number of audio output devices"*). Bộ giải mã nhận
+**cả mảng lẫn số**, để nếu thượng nguồn đổi sang ghi số đếm thì không hỏng lại.
+
+**`plugins_data` — 109/1500.** Hai chỗ trong cùng một khối dữ liệu mang tên
+`mimeTypes` nhưng **khác dạng**, và chính sự trùng tên đó làm lỗi sống lâu:
+
+```
+plugins[].mimeTypes   6342 đối tượng {type, suffixes, description, enabledPlugin}
+mimeTypes (cấp trên)  1371 CHUỖI     "Portable Document Format~~application/pdf~~pdf"
+```
+
+Kiểu chỉ nhận đối tượng, nên một chuỗi làm **cả** `PluginsData` thất bại. Nay
+nhận cả hai; chuỗi tách theo `description~~type~~suffixes` — cả 1371 giá trị
+đều đúng hai dấu phân cách. Đây là **phân tích**, không phải bịa: ba trường nằm
+sẵn trong chuỗi. `enabled_plugin` để `None` vì chuỗi không mang nó.
+
+Sau bản vá: cả hai **100%**.
+
+### Vì sao không ai thấy — và phần đáng nhớ hơn cả bản vá
+
+`plugins_data_parseable` **có** tồn tại từ trước. Nó tính cờ `any_plugins` rồi
+kết thúc bằng:
+
+```rust
+// Note: not all network samples have plugins — just verify parsing works
+let _ = any_plugins;
+```
+
+Cờ bị **vứt đi**, kèm một chú thích hợp lý hoá **sai**: đo ra thì mẫu *có*
+plugin — kiểu không khớp mới là nguyên nhân. Bài `audio_codecs_populated` ngay
+bên trên thì kết bằng `assert!(any_codecs, ...)` và nó thật.
+
+Một cờ tính rồi vứt, cộng một chú thích nghe hợp lý, là cách một lỗ hổng sống
+sót qua mọi lượt chạy test.
+
+### Thêm cổng chặn cả lớp lỗi này
+
+`moi_truong_option_duoc_dien_o_ti_le_da_do` — khoá **hai chiều**. Sàn chặn hồi
+quy; **trần** bắt ai sửa kiểu phải cập nhật bảng trong cùng lượt. Chính nó buộc
+bản phát hành này sửa bảng: nó đỏ ở vế trần với *"plugins_data: 100.0% > tran
+25.0% — truong nay TOT LEN"*.
+
+Sàn đặt **gần chế độ hỏng**, không gần giá trị thường. Bản đầu đặt sàn `battery`
+95,0 theo số đo 99,1% — nhưng phép đo đó chạy *có* ràng buộc OS còn bài test
+chạy *không*, nên nó ra 93,3% và cổng đỏ oan ngay lượt đầu. Sàn 60 cách xa mọi
+tỉ lệ quan sát được mà vẫn bắt được sự sụp đổ về ~0%.
+
+`hai_truong_sua_o_023_cho_gia_tri_dung_chu_khong_chi_some` canh phần còn lại:
+`Some` và *đúng* là hai chuyện khác nhau. Một bộ giải mã chấp nhận mọi thứ rồi
+trả giá trị rỗng cũng cho 100% `Some`.
+
 ## 0.2.2 — 2026-09-11
 
 Một bản sửa lỗi. **Đầu ra đổi so với 0.2.1** ở cùng một seed — 2,58% hồ sơ xin

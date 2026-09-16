@@ -493,20 +493,32 @@ let assignment = sample_constrained(network, &constraints, &mut rng)?;
 
 ## ⚖️ Intentional differences from browserforge
 
-`browserforge` and this library sample from the same Apify dataset, and that dataset is scraped
-from real traffic — which includes machines running broken spoofers. Several conditional
-probability tables therefore contain internally contradictory combinations.
+`browserforge` and this library both sample Apify Bayesian networks scraped from real traffic —
+which includes machines running broken spoofers, so several conditional probability tables
+contain internally contradictory combinations.
+
+They do **not** read the same snapshot. Measured 2026-09-16: this library bundles the
+2026-04-01 network (9,520,785 bytes uncompressed); `browserforge` 1.2.4 pulls the 2026-05-04
+one from `apify_fingerprint_datapoints` (13,008,418 bytes). The schema is identical — 25 and 19
+nodes, names matching 1:1 — but the tables differ, so any rate quoted below is a property of the
+snapshot it was measured on, not of the algorithm alone.
 
 Since **v0.2.0** this library rejects those combinations instead of reproducing them. Given the
-same constraints, output can differ from `browserforge`. Each difference below is a deliberate
-correction, with the measurement that motivated it.
+same constraints, output can differ from `browserforge`.
 
-| # | Area | `browserforge` behaviour | This library, since | Measured before the fix |
-|---|------|--------------------------|---------------------|-------------------------|
-| 1 | `.os()` constraint | Constrains `operatingSystem.name` only; `navigator.userAgent` may name a different OS | v0.2.0 | `os=Windows` → non-Windows UA in **930/2000** seeds (46.5%); `os=Linux` → **1715/2000** (85.8%). One seed produced a profile naming **three** operating systems at once |
-| 2 | `platform` | Sampled from a CPT that can contradict the already-clamped `userAgent` | v0.2.0 | **34/83** Windows user agents had a `platform` CPT leaking to another OS; one gave `Linux x86_64` with probability **1.0** |
-| 3 | UA Client Hints | `userAgentData` filtered on `platform` only; `architecture` taken from data | v0.2.1 | Blocks declaring `platform: Windows` alongside `platformVersion: 10.0` — a pair no Chrome sends. Inconsistency **11.9% → 8.5%**; `architecture` is now derived from the GPU renderer, which is a pure function |
-| 4 | `.browser()` constraint | Constrains browser name only; `userAgent` may belong to another browser family | v0.2.2 | **155/6000** seeds returned a UA from the wrong family (Safari, Edge, Firefox, bot-compatible) → **0/6000** after the fix |
+> **Correction (2026-09-16).** An earlier revision of this table placed all four rows under a
+> column headed "`browserforge` behaviour". The numbers were real, but they measured **this
+> library's own v0.1.x**, not the upstream project — and for row 1 the defect does not exist
+> upstream at all. We have since measured `browserforge` 1.2.4 directly across the full
+> constraint space (4 browsers × 5 operating systems × 2 device types, 400 profiles per cell,
+> 16,000 profiles). Row 1 is retracted; rows 2–4 do hold upstream, at the rates now shown.
+
+| # | Area | In `browserforge` 1.2.4 (measured) | In this library, v0.1.x (measured) | Fixed in |
+|---|------|------------------------------------|------------------------------------|----------|
+| 1 | `.os()` constraint | **Not reproducible** — the OS constraint held in 40/40 cells, 0 violations in 16,000 profiles. `browserforge` draws a constrained User-Agent from its header network first and conditions the fingerprint on it | `os=Windows` → non-Windows UA in **930/2000** seeds (46.5%); `os=Linux` → **1715/2000** (85.8%). One seed named **three** operating systems at once. Cause: this port read `userAgent` from the fingerprint network while reading the OS from the header network | v0.2.0 |
+| 2 | `platform` | **5/2000** Windows profiles (0.25%) reported a non-`Win*` `navigator.platform` | **34/83** Windows user agents had a `platform` CPT leaking to another OS; one gave `Linux x86_64` with probability **1.0** | v0.2.0 |
+| 3 | UA Client Hints | **~23/2000** (1.2%) malformed `platformVersion` — `"10.0"`, `"0.1.0"`, `"10"`. *(Note: `"19.0.0"` on Windows is **valid** — Windows reports the Universal API Contract version, not the OS version)* | same class of defect, plus `architecture` taken from data rather than derived | v0.2.1 |
+| 4 | `.browser()` constraint | **0%** in 30 of 40 cells, **100%** in the other 10 — for a browser/OS pair with no support in the dataset, the relaxation ladder silently drops the browser constraint and returns another family. Affected: `safari`×{windows, linux, android}, `edge`×{ios}, `firefox`×{ios}. Passing `strict=True` to `HeaderGenerator` prevents this | **155/6000** seeds returned a UA from the wrong family → **0/6000** after the fix | v0.2.2 |
 
 Two further changes are *not* divergences and are listed only to prevent confusion:
 
