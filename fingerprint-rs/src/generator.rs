@@ -1452,7 +1452,20 @@ mod tests {
                 }
             }
         }
-        // Note: not all network samples have plugins — just verify parsing works
+        // `any_plugins` CO Y khong duoc khang dinh o day, va ly do da doi.
+        //
+        // Ban cu ghi "not all network samples have plugins" roi `let _ =`.
+        // Do 2026-09-16: khong phai mau thieu plugin — la KIEU KHONG KHOP.
+        // `PluginsData::mime_types` doi `Vec<PluginMimeType>` trong khi
+        // `mimeTypes` cap tren cua du lieu la CHUOI, 1371/1371 gia tri. Nen
+        // `parse_stringified` that bai va tra `None` o 92,7% luot.
+        //
+        // Mot co tinh roi vut di la cach lo hong nay song sot. Ti le that nay
+        // duoc canh o `moi_truong_option_duoc_dien_o_ti_le_da_do`, hai chieu:
+        // tut xuong thi do, ma tot len ma quen nang san cung do.
+        //
+        // Bai nay giu dung pham vi cua ten no — "parseable": khi CO plugin
+        // thi cau truc phai doc duoc. Vong lap tren da khang dinh dieu do.
         let _ = any_plugins;
     }
 
@@ -1569,5 +1582,100 @@ mod tests {
 
         assert_eq!(profile.device, DeviceType::Desktop);
         assert_eq!(profile.browser.family, BrowserFamily::Chrome);
+    }
+    /// Moi truong `Option` phai duoc dien o TI LE DA DO — khong truong nao
+    /// duoc am tham tut ve `None`.
+    ///
+    /// VI SAO CAN BAI NAY. `assembler::parse_stringified` ket thuc bang
+    /// `.ok()`, nen mot kieu khong khop hinh dang du lieu se tra `None` va
+    /// KHONG bao gi. Do 2026-09-16 tren 1500 ho so (500 seed x 3 OS):
+    ///
+    /// ```text
+    /// video_card · audio_codecs · video_codecs · fonts · mock_web_rtc  100%
+    /// battery                                                          99,1%
+    /// plugins_data                                                      7,3%   HONG
+    /// multimedia_devices                                                  0%   HONG
+    /// ```
+    ///
+    /// Hai truong cuoi hong vi kieu khong khop du lieu Apify:
+    ///   - `MultimediaDevices` khai `speakers/micros/webcams: u8`, du lieu
+    ///     mang MANG doi tuong -> that bai 1500/1500.
+    ///   - `PluginsData::mime_types` doi `Vec<PluginMimeType>`, `mimeTypes`
+    ///     cap tren cua du lieu la CHUOI ("Portable Document Format~~
+    ///     application/pdf~~pdf"), 1371/1371 gia tri. Cong them 5 muc plugin
+    ///     thieu `name`/`description`/`filename`.
+    ///
+    /// Ca hai deu duoc README danh dau ✅ trong bang feature-parity.
+    ///
+    /// KHOA HAI CHIEU. Nguong duoi chan hoi quy; nguong TREN bat ai sua kieu
+    /// phai cap nhat bang nay trong cung luot. Mot bai chi chan mot chieu se
+    /// im lang khi lo hong duoc va, va roi khong ai nho de nang san.
+    #[test]
+    fn moi_truong_option_duoc_dien_o_ti_le_da_do() {
+        const N: u64 = 150;
+        let mut dem = [0u32; 8];
+        for seed in 0..N {
+            let p = FingerprintGenerator::new()
+                .seeded(seed)
+                .generate()
+                .expect("phai sinh duoc");
+            let f = &p.fingerprint;
+            for (i, co) in [
+                f.video_card.is_some(),
+                f.audio_codecs.is_some(),
+                f.video_codecs.is_some(),
+                f.fonts.is_some(),
+                f.mock_web_rtc.is_some(),
+                f.battery.is_some(),
+                f.plugins_data.is_some(),
+                f.multimedia_devices.is_some(),
+            ]
+            .iter()
+            .enumerate()
+            {
+                if *co {
+                    dem[i] += 1;
+                }
+            }
+        }
+
+        // (ten, san, tran) — phan tram.
+        //
+        // SAN DAT GAN CHE DO HONG, KHONG GAN GIA TRI THUONG. Ban dau cua bang
+        // nay dat san `battery` o 95,0 vi do duoc 99,1% tren 1500 ho so — nhung
+        // phep do do chay CO rang buoc OS, con bai nay chay KHONG. Dieu kien
+        // khac thi ti le khac: o day battery ra 93,3%, va cong do oan ngay luot
+        // dau.
+        //
+        // Che do hong can bat la "tut ve None", tuc ~0%. San 60 cach xa moi ti
+        // le quan sat duoc ma van bat duoc su sup do. San om sat gia tri thuong
+        // chi mua lai mot cong chap chon.
+        let bang: [(&str, f64, f64); 8] = [
+            ("video_card", 60.0, 100.0),
+            ("audio_codecs", 60.0, 100.0),
+            ("video_codecs", 60.0, 100.0),
+            ("fonts", 60.0, 100.0),
+            ("mock_web_rtc", 60.0, 100.0),
+            ("battery", 60.0, 100.0),
+            // HONG — xem docstring. Tran giu thap DE CONG DO khi kieu duoc sua;
+            // do la nua con lai cua khoa hai chieu.
+            ("plugins_data", 0.0, 25.0),
+            ("multimedia_devices", 0.0, 0.0),
+        ];
+
+        for (i, (ten, san, tran)) in bang.iter().enumerate() {
+            let ti_le = f64::from(dem[i]) / (N as f64) * 100.0;
+            assert!(
+                ti_le >= *san,
+                "{ten}: {ti_le:.1}% < san {san:.1}% — mot truong vua tut ve None. \
+                 Kiem kieu cua no co con khop hinh dang du lieu Apify khong."
+            );
+            assert!(
+                ti_le <= *tran,
+                "{ten}: {ti_le:.1}% > tran {tran:.1}% — truong nay TOT LEN. \
+                 Neu ban vua sua kieu cho no thi nang ca san lan tran trong \
+                 cung luot sua nay."
+            );
+        }
     }
 }
