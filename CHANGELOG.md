@@ -1,5 +1,52 @@
 # Changelog
 
+## 0.2.4 — 2026-09-17
+
+Sửa lỗi. **Không đổi chữ ký công khai nào** — chỉ siết một bộ lọc nội bộ.
+
+### Hồ sơ Windows mang renderer của OS khác — 16% số lượt
+
+Đo qua harness parity của Veilus, 500 seed × 3 OS chạy qua 22 phép kiểm nhất
+quán:
+
+```
+ho so Windows mang renderer OS khac   81/500 (16%)  ->  0/500
+```
+
+Renderer lọt vào là chuỗi **macOS** (`Intel Iris OpenGL Engine`, cách đặt tên
+driver của Apple), chuỗi **Mesa/Linux**, và renderer **trần** không có vỏ
+`ANGLE (...)`.
+
+### Nguyên nhân: một lệ đúng đặt trên một giả định sai
+
+`renderer_mau_thuan_os` chỉ loại Apple Silicon cho Windows, theo lệ *"chỉ loại
+thứ chắc chắn sai"*. Lệ đó đúng. Giả định bên dưới thì sai: rằng renderer
+Intel/NVIDIA/AMD **trần** có thể là Windows.
+
+Hai nguồn độc lập đều nói không:
+
+```
+bang GPU curated cua Veilus   21/21 muc Windows bat dau "ANGLE ("
+tap Apify                     383 renderer ANGLE+Direct3D
+```
+
+Chrome trên Windows đi qua ANGLE từ đầu. Trên **Linux** thì renderer trần *là*
+hợp lệ — 5/11 mục bảng Linux không ANGLE — nên **chỉ Windows** đòi khớp dương.
+
+Đa dạng không mất: 395/650 giá trị còn dùng được cho Windows.
+
+### Một mối nguy còn lại, ghi ra thay vì vá mù
+
+11/80 UA Windows+Chrome có CPT `videoCard` **không chứa renderer Windows nào**.
+Ở những UA đó bộ lọc giao rỗng, và `traverse_cpt_filtered` rơi về tập **chưa
+lọc** — bốc đúng thứ vừa loại bỏ, không một dòng log nào.
+
+Hôm nay không với tới được: phép kẹp UA không chọn những UA ấy, và một bài quét
+500 seed cho `0/500` kể cả khi tắt mọi cơ chế vớt lại. Nên **không** thêm mã
+vớt — một đoạn sửa không phép kiểm nào phân biệt được là mã đầu cơ. Khi nó với
+tới được, thứ cần sửa là **sự im lặng** ở `sampler.rs`, không phải thêm một lớp
+vá ở bộ lọc.
+
 ## 0.2.3 — 2026-09-16
 
 Sửa lỗi. **Không đổi chữ ký công khai nào** — hai bản vá dưới đây đi qua
