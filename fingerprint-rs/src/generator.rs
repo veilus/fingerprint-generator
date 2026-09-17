@@ -489,8 +489,45 @@ fn uad_nhat_quan(v: &str, os: &OsFamily) -> bool {
 fn renderer_mau_thuan_os(r: &str, os: &OsFamily) -> bool {
     let d3d = r.contains("Direct3D") || r.contains("D3D11");
     let apple_silicon = r.contains("Apple M") || r.contains("ANGLE (Apple");
+    // Vulkan qua ANGLE co tren Windows (SwiftShader, va driver moi).
+    let windows_that = d3d || r.contains("Vulkan");
     match os {
-        OsFamily::Windows => apple_silicon,
+        // WINDOWS DOI KHOP DUONG, khac ba nhanh con lai — va do la mot thay
+        // doi NGUYEN TAC so voi ban truoc, nen ghi ro ly do.
+        //
+        // Ban truoc chi loai `apple_silicon`, theo le "chi loai thu CHAC CHAN
+        // sai". Le do dung, nhung no dua tren mot gia dinh sai: rang renderer
+        // Intel/NVIDIA/AMD TRAN co the la Windows. Do 2026-09-17, hai nguon
+        // doc lap deu noi khong:
+        //
+        //   bang GPU curated cua veilus-core   21/21 muc Windows bat dau "ANGLE ("
+        //   tap Apify                          383 renderer ANGLE+Direct3D
+        //
+        // Chrome tren Windows di qua ANGLE tu dau, nen `Intel(R) UHD Graphics
+        // 630` tran hay `Intel Iris OpenGL Engine` (cach dat ten driver cua
+        // Apple) la cua OS KHAC. Tren Linux thi tran LA hop le — 5/11 muc bang
+        // Linux khong ANGLE — nen chi Windows doi khop duong.
+        //
+        // Hau qua do duoc truoc khi sua: 81/500 ho so Windows (16%) mang
+        // renderer cua OS khac.
+        //
+        // Da dang KHONG mat: 395/650 gia tri con dung duoc cho Windows.
+        // MOT MOI NGUY CON LAI, ghi ra de nguoi sau khong phai do lai.
+        //
+        // 11/80 UA Windows+Chrome co CPT `videoCard` KHONG chua mot renderer
+        // Windows nao — lua chon duy nhat cua chung la chuoi macOS
+        // (`Intel Iris OpenGL Engine`) hoac Mesa/Linux. O nhung UA do, bo loc
+        // nay giao RONG, va `traverse_cpt_filtered` (sampler.rs:96-100) roi ve
+        // tap CHUA LOC — tuc boc dung thu vua loc bo, KHONG mot dong log nao.
+        //
+        // Hom nay khong voi toi duoc: phep kep UA khong chon nhung UA ay, va
+        // mot bai quet 500 seed Windows cho 0 ho so xau ke ca khi TAT moi co
+        // che vot lai. Nen KHONG them ma vot o day — mot doan sua khong bai
+        // nao phan biet duoc la ma dau co.
+        //
+        // Nhung no se voi toi duoc neu phep kep UA noi ra. Thu can sua khi do
+        // la SU IM LANG o sampler.rs, khong phai them mot lop va o day.
+        OsFamily::Windows => !windows_that,
         OsFamily::MacOs => d3d,
         OsFamily::Linux | OsFamily::Android => d3d || apple_silicon,
         OsFamily::Ios => d3d,
@@ -1236,6 +1273,58 @@ mod tests {
         assert!(
             any_avail_top,
             "At least one profile should have availTop populated"
+        );
+    }
+
+    /// Ho so Windows KHONG duoc mang renderer cua OS khac.
+    ///
+    /// VI TU LAY TU HA NGUON, khong lay tu `renderer_mau_thuan_os` cua chinh
+    /// file nay — dung lai vi tu noi bo thi bai test chi khang dinh "ham bang
+    /// chinh no". Day la dieu `veilus-core` check 4 doi:
+    ///
+    ///     Windows -> renderer PHAI mang D3D11 | D3D12 | Direct3D11 |
+    ///                Direct3D12 | Vulkan
+    ///
+    /// QUET, KHONG GHIM VAI SEED. Do 2026-09-17 qua `tools/fingerprint-parity`:
+    /// 82/1500 ho so truot, tuc 5,5%. Ba seed co ~15% kha nang khong gap ca
+    /// nao — du de mot bai ghim seed xanh trong khi loi con nguyen.
+    ///
+    /// NGUON CUA VI TU, hai phep do doc lap:
+    ///   bang GPU curated cua veilus-core   21/21 muc Windows bat dau "ANGLE ("
+    ///   tap Apify                          383 renderer ANGLE+Direct3D
+    /// Chrome tren Windows di qua ANGLE, nen renderer TRAN (`Intel(R) UHD
+    /// Graphics 630`) hay dang macOS (`Intel Iris OpenGL Engine`) la cua OS
+    /// khac. Tren Linux thi tran LA hop le — 5/11 muc bang Linux khong ANGLE.
+    #[test]
+    fn ho_so_windows_khong_mang_renderer_cua_os_khac() {
+        let mut xau = Vec::new();
+        for seed in 0..500u64 {
+            let p = FingerprintGenerator::new()
+                .seeded(seed)
+                .browser(BrowserFamily::Chrome)
+                .os(OsFamily::Windows)
+                .generate()
+                .expect("must succeed");
+            let Some(vc) = &p.fingerprint.video_card else {
+                continue;
+            };
+            let r = &vc.renderer;
+            // KHOP TIEN TO `Direct3D`, khong liet ke phien ban: `Direct3D9Ex`
+            // la renderer Windows THAT (11/650 trong lat du lieu, chuoi mang
+            // ten DLL driver Windows). Ban dau cua bai nay liet ke va bo sot
+            // no — cung lop loi voi thu no di canh.
+            let hop_le = ["D3D11", "D3D12", "Direct3D", "Vulkan"]
+                .iter()
+                .any(|k| r.contains(k));
+            if !hop_le {
+                xau.push(format!("seed={seed}: {r}"));
+            }
+        }
+        assert!(
+            xau.is_empty(),
+            "{}/500 ho so Windows mang renderer cua OS khac:\n  {}",
+            xau.len(),
+            xau.iter().take(5).cloned().collect::<Vec<_>>().join("\n  ")
         );
     }
 
