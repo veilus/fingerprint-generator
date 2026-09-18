@@ -9,7 +9,23 @@ resolver = "2"
 [workspace.package]
 version = "0.2.4"
 edition = "2021"
-rust-version = "1.75"
+# Con so nay la LOI HUA voi nguoi ngoai: cargo doc no de bao "toolchain qua cu"
+# som va de hieu, thay vi de nguoi dung lac vao mot loi edition2024 giua cay phu
+# thuoc. Tu 2026-09-15 toi 2026-09-18 no khai 1.75 trong khi that ra can 1.88 —
+# lech 13 phien ban, va lech ve phia HUA NHIEU HON KHA NANG (VEIL-653).
+#
+# 1.88 khong phai uoc luong an toan thua; do duoc no la con so NHO NHAT du:
+#   cargo +1.87 check --locked --workspace --all-targets -> ma thoat 101
+#     time@0.3.47 requires rustc 1.88.0
+#   cargo +1.88 check --locked --workspace --all-targets -> ma thoat 0
+#
+# `time` la dependency NORMAL, khong phai dev: time -> zip -> veilus-fingerprint-data
+# -> veilus-fingerprint. Tuc no nam trong do thi build cua crate DA PHAT HANH,
+# moi nguoi dung deu nhan.
+#
+# Job `msrv` trong .github/workflows/ci.yml doc chinh dong duoi day va thu bien
+# dich bang dung toolchain do. Doi so o day ma khong do lai thi cong se do.
+rust-version = "1.88"
 authors = ["Veilus <veilusbrowser@gmail.com>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/veilus/fingerprint-generator"

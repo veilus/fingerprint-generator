@@ -59,3 +59,43 @@ jobs:
             # la 808 pass / 20 fail. Mot cong kiem noi doi te hon khong co cong.
             - name: cargo test
               run: cargo test --locked --workspace --no-fail-fast
+
+    msrv:
+        name: MSRV — dung con so da khai trong Cargo.toml
+        runs-on: ubuntu-latest
+        timeout-minutes: 15
+        steps:
+            - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+
+            # DOC con so, KHONG go lai o day. Go lai la tao ban sao thu hai cua
+            # cung mot su that, va hai ban sao se lech nhau — dung can benh ma
+            # cong nay sinh ra de chan (VEIL-653: khai 1.75, that ra can 1.88,
+            # khong gi canh nen no song nhu the tu luc phat hanh).
+            - name: Doc rust-version tu Cargo.toml
+              id: msrv
+              run: |
+                  ver=$(sed -n 's/^rust-version *= *"\(.*\)"/\1/p' Cargo.toml)
+                  # Hang doi chung: neu ai do doi cach viet dong do thi `ver`
+                  # rong, va cai chet phai la O DAY chu khong phai mot buoc sau
+                  # im lang cai toolchain rong roi bao xanh.
+                  test -n "$ver" || { echo "khong doc duoc rust-version tu Cargo.toml"; exit 1; }
+                  echo "version=$ver" >> "$GITHUB_OUTPUT"
+                  echo "MSRV khai trong Cargo.toml: $ver"
+
+            - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87 # stable
+              with:
+                  toolchain: ${{ steps.msrv.outputs.version }}
+
+            - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+
+            # `check` chu khong phai `test`: cong nay hoi "toolchain da khai co
+            # DU de bien dich khong", khong hoi hanh vi — hanh vi da co job tren
+            # lo bang toolchain stable.
+            #
+            # Chieu no BAT: khai thap hon su that -> do. Do la chieu nguy hiem,
+            # vi no la chieu hua nhieu hon kha nang.
+            # Chieu no KHONG bat: khai cao hon su that -> van xanh. Chap nhan
+            # duoc, vi huong do chi lam crate kho dung hon chu khong lam ai lac
+            # duong khi build.
+            - name: cargo check bang dung toolchain da khai
+              run: cargo check --locked --workspace --all-targets

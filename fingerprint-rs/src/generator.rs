@@ -215,11 +215,9 @@ impl FingerprintGenerator {
         let mut fp_assignment = fp_assignment;
         if let Some(ua) = fp_assignment.get("userAgent").cloned() {
             if let Some(os) = os_tu_ua(&ua) {
-                // `map_or` chu khong `is_none_or`: MSRV cua crate la 1.75,
-                // con `is_none_or` moi on dinh tu 1.82.
                 let can_sua = fp_assignment
                     .get("platform")
-                    .map_or(true, |pf| !platform_khop_os(pf, &os));
+                    .is_none_or(|pf| !platform_khop_os(pf, &os));
                 if can_sua {
                     fp_assignment.insert("platform".to_string(), platform_suy_ra(&os).to_string());
                 }
@@ -318,11 +316,11 @@ impl FingerprintGenerator {
                             .map(std::string::ToString::to_string)
                             .filter(|v| {
                                 v == MISSING_VALUE
-                                    || (self.os.as_ref().map_or(true, |os| ua_khop_os(v, os))
+                                    || (self.os.as_ref().is_none_or(|os| ua_khop_os(v, os))
                                         && self
                                             .browser
                                             .as_ref()
-                                            .map_or(true, |b| ua_khop_browser(v, b)))
+                                            .is_none_or(|b| ua_khop_browser(v, b)))
                             })
                             .collect();
                         if !hop_le.is_empty() {
