@@ -1,5 +1,68 @@
 # Changelog
 
+## 0.3.1 — 2026-09-19
+
+**Sửa một khiếm khuyết do chính 0.3.0 phát hành ra.** Không đổi chữ ký công khai nào.
+
+### Hồ sơ Windows khai tới 640 nhân — con số Chrome thật không phát ra được
+
+0.3.0 nới `hardware_concurrency` lên `u16` và cắt theo hệ điều hành, nhưng
+**không đặt trần cho Windows**, với lý do *"server thật đạt tới hàng trăm nhân"*.
+Lý do đó đúng về **phần cứng** và sai về **Chrome**.
+
+`navigator.hardwareConcurrency` trả thẳng `base::SysInfo::NumberOfProcessors()`:
+
+```
+navigator_concurrent_hardware.cc:11
+  return static_cast<unsigned>(base::SysInfo::NumberOfProcessors());
+```
+
+Trên Windows hàm đó lấy `dwNumberOfProcessors` từ `::GetNativeSystemInfo`:
+
+```
+sys_info_win.cc          NumberOfProcessors() -> OSInfo::processors()
+windows_version.cc:174   processors_ = system_info.dwNumberOfProcessors
+windows_version.cc:71    ::GetNativeSystemInfo(&info)
+```
+
+`dwNumberOfProcessors` chỉ đếm bộ xử lý logic **trong một processor group**, và
+Windows giới hạn mỗi group 64. Chrome **không** gọi
+`GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)`. Nên một Chrome thật trên Windows
+không bao giờ báo quá **64**, dù máy có 640 luồng.
+
+Trần mới `WINDOWS_MAX_CORES = 64` — **không** phải giới hạn phần cứng, mà là giới
+hạn của chính Chrome, đọc từ cây nguồn Chromium 153.0.8010.37.
+
+Linux giữ nguyên không trần: `sysconf(_SC_NPROCESSORS_ONLN)` trả số thật, không
+có khái niệm processor group.
+
+### Cách phát hiện, vì nó đáng hơn bản sửa
+
+`tools/fingerprint-parity` — bộ đo đối chiếu thư viện với các phép kiểm nhất quán
+của Veilus — chạy **sau** khi 0.3.0 đã lên crates.io. Đo trước/sau, cùng 1500 hồ sơ:
+
+```
+                                   truoc 0.3.0    0.3.0    0.3.1
+Hardware concurrency plausible          0.0%       1.1%     0.0%
+Cores and RAM plausible together       25.3%      28.1%    28.1%
+```
+
+Vế thứ nhất là khiếm khuyết này, nay đã hết. Vế thứ hai chưa hết — xem dưới.
+
+### Còn lại, KHÔNG sửa ở bản này
+
+`Cores and RAM plausible together` vẫn 28,1% so với 25,3% trước 0.3.0. Tỉ lệ lệch
+trải đều mọi hệ điều hành, đo trên 1500 hồ sơ:
+
+```
+Linux 43.8%   Windows 28.4%   MacOs 28.3%   Ios 24.0%   Android 18.7%
+```
+
+Đây là tính chất **cấu trúc** của mạng Bayes: nó lấy mẫu `hardwareConcurrency` và
+`deviceMemory` mà không ghép cặp, nên hồ sơ nhiều nhân thường nhận ít RAM. 0.3.0
+chỉ làm biên độ số nhân lớn hơn nên tỉ lệ lộ rõ hơn 2,8 điểm. Sửa nó là đổi cách
+lấy mẫu, không phải đổi một trần — việc riêng.
+
 ## 0.3.0 — 2026-09-19
 
 **HAI THAY ĐỔI PHÁ VỠ**, gộp một bản có chủ đích để người dùng ngoài chịu đúng

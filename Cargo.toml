@@ -7,7 +7,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 # Con so nay la LOI HUA voi nguoi ngoai: cargo doc no de bao "toolchain qua cu"
 # som va de hieu, thay vi de nguoi dung lac vao mot loi edition2024 giua cay phu
@@ -36,8 +36,8 @@ readme = "README.md"
 
 [workspace.dependencies]
 # Internal
-veilus-fingerprint-core = { path = "fingerprint-core", version = "0.3.0" }
-veilus-fingerprint-data = { path = "fingerprint-data", version = "0.3.0" }
+veilus-fingerprint-core = { path = "fingerprint-core", version = "0.3.1" }
+veilus-fingerprint-data = { path = "fingerprint-data", version = "0.3.1" }
 
 # External — pin exact versions to ensure reproducibility
 serde = { version = "1", features = ["derive"] }

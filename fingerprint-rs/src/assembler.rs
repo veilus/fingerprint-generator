@@ -35,6 +35,19 @@ pub(crate) const MAC_MAX_CORES: u16 = 24;
 /// Pro co 6. Cung la con so trich duoc.
 pub(crate) const IOS_MAX_CORES: u16 = 10;
 
+/// Tran cho Windows, va day KHONG phai gioi han phan cung — no la gioi han cua
+/// CHINH CHROME.
+///
+/// `navigator.hardwareConcurrency` tra thang `base::SysInfo::NumberOfProcessors()`
+/// (navigator_concurrent_hardware.cc). Tren Windows ham do lay
+/// `dwNumberOfProcessors` tu `::GetNativeSystemInfo` (windows_version.cc:174), va
+/// truong do chi dem so bo xu ly logic TRONG MOT PROCESSOR GROUP — Windows gioi
+/// han moi group 64. Chrome KHONG goi `GetActiveProcessorCount(ALL_PROCESSOR_GROUPS)`.
+///
+/// Nen mot Chrome that tren Windows KHONG BAO GIO bao qua 64, du may co 640 luong.
+/// Do doc tu cay nguon Chromium 153.0.8010.37, 2026-09-19.
+pub(crate) const WINDOWS_MAX_CORES: u16 = 64;
+
 /// Tran cho Android. KHAC HAI CAI TREN: day KHONG phai so nhan cua mot may cu
 /// the, ma la mot TRAN CO BIEN — khong co mot "may Android nhieu nhan nhat"
 /// duy nhat de trich. SoC dau bang hien ban co 8 nhan; 16 la tran rong rai nam
@@ -61,10 +74,11 @@ fn clamp_cores_for_os(cores: u16, os: &OsFamily) -> u16 {
         OsFamily::MacOs => cores.min(MAC_MAX_CORES),
         OsFamily::Ios => cores.min(IOS_MAX_CORES),
         OsFamily::Android => cores.min(ANDROID_MAX_CORES),
-        // Windows va Linux KHONG co tran: server that dat toi hang tram nhan,
-        // va UA khong phan biet duoc may chu voi may ban. Do 2026-09-19 tren
-        // 3000 ho so: Linux max 144, Windows max 640 — ca hai deu ton tai.
-        OsFamily::Windows | OsFamily::Linux | OsFamily::Other(_) => cores,
+        OsFamily::Windows => cores.min(WINDOWS_MAX_CORES),
+        // Linux KHONG co tran: `sysconf(_SC_NPROCESSORS_ONLN)` tra so that,
+        // khong co gioi han group nao, nen server 384 luong bao dung 384.
+        // `Other(_)` cung khong cat — khong biet gi ve no thi dung doan.
+        OsFamily::Linux | OsFamily::Other(_) => cores,
     }
 }
 
@@ -715,19 +729,37 @@ mod tests {
         );
     }
 
-    /// Chieu nguoc: Linux va Windows KHONG bi cat, vi server that dat toi do.
+    /// Linux KHONG bi cat — `sysconf(_SC_NPROCESSORS_ONLN)` tra so that, khong
+    /// co gioi han group nao.
     ///
     /// Thieu bai nay thi mot ban loc "cat het moi thu > 24" cung xanh, va no se
-    /// vut 80 don vi khoi luong hop le cua Linux/Windows.
+    /// vut khoi luong hop le cua Linux.
     #[test]
-    fn ho_so_linux_va_windows_giu_nguyen_so_nhan_lon() {
-        for os in [OsFamily::Linux, OsFamily::Windows] {
+    fn ho_so_linux_giu_nguyen_so_nhan_lon() {
+        assert_eq!(
+            clamp_cores_for_os(384, &OsFamily::Linux),
+            384,
+            "Linux phai giu 384 — server that dat toi do (EPYC hai socket)"
+        );
+    }
+
+    /// Windows bi cat o 64, va KHONG phai vi phan cung — vi chinh Chrome.
+    ///
+    /// Ban 0.3.0 phat toi 640 cho ho so Windows. Do la thu Chrome that khong
+    /// bao gio phat ra duoc, vi no doc `dwNumberOfProcessors` tu
+    /// `GetNativeSystemInfo`, tuc mot processor group, toi da 64.
+    #[test]
+    fn ho_so_windows_khong_bao_gio_khai_qua_64_nhan() {
+        for gia_tri in [65u16, 96, 128, 192, 384, 640] {
             assert_eq!(
-                clamp_cores_for_os(384, &os),
-                384,
-                "{os:?} phai giu 384 — server that dat toi do (EPYC hai socket)"
+                clamp_cores_for_os(gia_tri, &OsFamily::Windows),
+                WINDOWS_MAX_CORES,
+                "Windows nhan {gia_tri} phai ve {WINDOWS_MAX_CORES} — Chrome doc mot \
+                 processor group, khong bao gio thay hon"
             );
         }
+        // Hang doi chung: duoi tran thi KHONG duoc dung toi.
+        assert_eq!(clamp_cores_for_os(32, &OsFamily::Windows), 32);
     }
 
     /// Moi gia tri mang TU KHAI la co the xay ra thi phai doc lai duoc.
