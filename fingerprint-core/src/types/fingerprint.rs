@@ -157,7 +157,10 @@ pub struct NavigatorFingerprint {
     pub vendor_sub: Option<String>,
     /// `navigator.maxTouchPoints`
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_touch_points: Option<u8>,
+    /// So diem cham toi da. `u16` chu khong `u8`: mang Bayes cua chinh thu
+    /// vien liet `256` trong `possibleValues` cua nut nay, va `u8` lam no
+    /// mat im lang thanh `None` — xem VEIL-699.
+    pub max_touch_points: Option<u16>,
     /// `navigator.product` — always "Gecko".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub product: Option<String>,

@@ -1,5 +1,56 @@
 # Changelog
 
+## 0.3.0 — 2026-09-19
+
+**THAY ĐỔI PHÁ VỠ.** `NavigatorFingerprint::max_touch_points` đổi từ
+`Option<u8>` sang `Option<u16>`. Người dùng đang khớp kiểu tường minh (`let x:
+Option<u8> = fp.navigator.max_touch_points;`) phải sửa một dòng; người dùng chỉ
+đọc giá trị thì không phải làm gì.
+
+### Vì sao đổi: dữ liệu của chính thư viện không lọt qua kiểu của chính nó
+
+Mạng Bayes kèm theo crate khai `256` là một giá trị có thể xảy ra của nút
+`maxTouchPoints`:
+
+```
+possibleValues = 0, 1, 2, 3, 5, 9, 10, 20, 40, 256
+```
+
+`256` không lọt vào `u8`. Bộ đọc trả `None`, và `None` ở đây **không phân biệt
+được với "mạng không có dữ liệu"**. Người dùng đọc ra một câu sai — rằng thư
+viện không biết gì về hồ sơ này — trong khi thư viện biết, và con số đó là số đo
+từ traffic thật.
+
+Nó không nổ, không cảnh báo, không trả `Err`. Đó là lý do nó sống lâu.
+
+### Bài kiểm mới, và điều kiện để nó có nghĩa
+
+`moi_gia_tri_maxtouchpoints_trong_mang_deu_doc_lai_duoc` khẳng định **mọi** giá
+trị trong `possibleValues` của nút đó đều đọc lại được. Bài này đã được chạy ở
+trạng thái ĐỎ trước khi sửa:
+
+```
+mang khai 10 gia tri cho maxTouchPoints nhung 1 gia tri khong doc lai duoc:
+["*STRINGIFIED*256"]
+```
+
+Nếu viết sau khi sửa thì nó chỉ đang nói `u16` chứa được số nhỏ — một điều không
+ai nghi ngờ. Bài kèm một hàng đối chứng: nút có dưới 5 giá trị thì bài tự đỏ,
+để việc thu gọn dữ liệu không âm thầm làm nó vô nghĩa.
+
+### Thứ bản này KHÔNG sửa
+
+`hardwareConcurrency` mang **cùng lớp lỗi và nặng hơn 150 lần**: 4 giá trị của
+nó vượt `u8` (384, 448, 512, 640), chiếm **26,4%** khối lượng xác suất toàn
+mạng, và 127/479 phân phối có điều kiện mất hơn một nửa khối lượng. Nó còn tệ
+hơn ở chỗ mất thành `.unwrap_or(4)` — một con số **trông hợp lý** — chứ không
+thành `None`.
+
+Không gộp vào bản này vì nó đặt ra một câu hỏi mà `maxTouchPoints` không đặt:
+`384` nhân cho một UA **Macintosh** là giá trị không tồn tại trên đời, nên nới
+kiểu để phát nó ra có thể tạo một dấu vân tay MỚI thay vì sửa một dấu vân tay
+sai. Đó là quyết định về dữ liệu, không phải về kiểu.
+
 ## 0.2.4 — 2026-09-17
 
 Sửa lỗi. **Không đổi chữ ký công khai nào** — chỉ siết một bộ lọc nội bộ.

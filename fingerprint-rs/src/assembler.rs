@@ -31,6 +31,15 @@ fn parse_stringified_u8(raw: &str) -> Option<u8> {
     parse_stringified::<u8>(raw).or_else(|| raw.parse().ok())
 }
 
+/// Parse gia tri cua nut `maxTouchPoints`.
+///
+/// Tach khoi `parse_stringified_u8` co y: hai nut khac nhau co mien gia tri khac
+/// nhau, va gop chung mot ham nghia la doi mien cua nut nay se lang le doi mien
+/// cua nut kia. Xem VEIL-699.
+fn parse_stringified_max_touch_points(raw: &str) -> Option<u16> {
+    parse_stringified::<u16>(raw).or_else(|| raw.parse().ok())
+}
+
 /// Parse an f32 from a `*STRINGIFIED*N` value.
 fn parse_stringified_f32(raw: &str) -> Option<f32> {
     parse_stringified::<f32>(raw).or_else(|| raw.parse().ok())
@@ -296,7 +305,7 @@ pub fn assemble_profile(
     let product = opt_field(fp, "product").or_else(|| Some("Gecko".to_string()));
     let max_touch_points = fp
         .get("maxTouchPoints")
-        .and_then(|v| parse_stringified_u8(v));
+        .and_then(|v| parse_stringified_max_touch_points(v));
 
     // extraProperties: *STRINGIFIED*{...}
     let extra_properties: Option<ExtraProperties> =
@@ -508,4 +517,59 @@ pub fn assemble_profile(
             slim: Some(false),
         },
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Lay `possibleValues` cua mot nut trong mang fingerprint.
+    fn possible_values_of(node_name: &str) -> Vec<String> {
+        let network = veilus_fingerprint_data::loader::get_fingerprint_network()
+            .expect("mang fingerprint phai nap duoc");
+        let node = network
+            .nodes
+            .iter()
+            .find(|n| n.name == node_name)
+            .unwrap_or_else(|| panic!("mang phai co nut `{node_name}`"));
+        node.possible_values.clone()
+    }
+
+    /// Moi gia tri mang TU KHAI la co the xay ra thi phai doc lai duoc.
+    ///
+    /// Bai nay PHAI DO truoc khi doi `Option<u8>` thanh `Option<u16>` (VEIL-699).
+    /// Neu no xanh ngay tu dau thi no khong canh gi — no chi dang noi rang u16
+    /// chua duoc nhung so nho, mot dieu khong ai nghi ngo.
+    ///
+    /// Do 2026-09-19: `possibleValues` cua nut nay la
+    /// `[0, 1, 2, 3, 5, 9, 10, 20, 40, 256]`, va `256` khong lot vao `u8`.
+    /// Mat im lang thanh `None`, tuc nguoi dung thu vien doc ra "mang khong co
+    /// du lieu cho ho so nay" trong khi mang CO.
+    #[test]
+    fn moi_gia_tri_maxtouchpoints_trong_mang_deu_doc_lai_duoc() {
+        let values = possible_values_of("maxTouchPoints");
+
+        // Hang doi chung: nut rong hoac mot phan tu thi bai duoi khong hoi gi.
+        // Neu ai do thu gon du lieu, cho chet phai la O DAY.
+        assert!(
+            values.len() >= 5,
+            "nut maxTouchPoints chi co {} gia tri — qua it de bai duoi co nghia",
+            values.len()
+        );
+
+        let lost: Vec<&String> = values
+            .iter()
+            .filter(|v| v.as_str() != veilus_fingerprint_data::network::MISSING_VALUE)
+            .filter(|v| parse_stringified_max_touch_points(v).is_none())
+            .collect();
+
+        assert!(
+            lost.is_empty(),
+            "mang khai {} gia tri cho maxTouchPoints nhung {} gia tri khong doc lai duoc: {:?}\n\
+             Day la du lieu cua chinh thu vien, khong phai dau vao la — mat o day la mat im lang.",
+            values.len(),
+            lost.len(),
+            lost
+        );
+    }
 }
