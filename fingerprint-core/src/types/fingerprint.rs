@@ -120,7 +120,11 @@ pub struct NavigatorFingerprint {
     /// `navigator.userAgent`
     pub user_agent: String,
     /// `navigator.hardwareConcurrency`
-    pub hardware_concurrency: u8,
+    /// So nhan logic. `u16` chu khong `u8`: mang Bayes khai bon gia tri
+    /// vuot 255 (384, 448, 512, 640), chiem 26,36% khoi luong xac suat —
+    /// `u8` lam chung roi vao `.unwrap_or(4)`, tuc mot con so TRONG HOP LY.
+    /// Xem VEIL-738.
+    pub hardware_concurrency: u16,
     /// `navigator.deviceMemory` — `None` when not exposed (Firefox, privacy budget).
     pub device_memory: Option<f32>,
     /// `navigator.platform`

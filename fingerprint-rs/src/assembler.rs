@@ -26,9 +26,51 @@ fn opt_field(map: &HashMap<String, String>, key: &str) -> Option<String> {
         .cloned()
 }
 
-/// Parse a u8 from a `*STRINGIFIED*N` value.
-fn parse_stringified_u8(raw: &str) -> Option<u8> {
-    parse_stringified::<u8>(raw).or_else(|| raw.parse().ok())
+/// Tran so nhan cho ho so macOS. 24 = Mac Pro M2 Ultra, may nhieu nhan nhat
+/// Apple ban. Mot con so TRICH DUOC, khong phai mot nguong bia — do la dieu
+/// kien de luat loc nay khong thanh mot lua chon tuy tien. Xem VEIL-738.
+pub(crate) const MAC_MAX_CORES: u16 = 24;
+
+/// Tran cho iOS. 10 = iPad Pro M4 (CPU 10 nhan, thong so cua Apple); iPhone 16
+/// Pro co 6. Cung la con so trich duoc.
+pub(crate) const IOS_MAX_CORES: u16 = 10;
+
+/// Tran cho Android. KHAC HAI CAI TREN: day KHONG phai so nhan cua mot may cu
+/// the, ma la mot TRAN CO BIEN — khong co mot "may Android nhieu nhan nhat"
+/// duy nhat de trich. SoC dau bang hien ban co 8 nhan; 16 la tran rong rai nam
+/// tren moi thiet bi dang luu hanh. Neu mai co may vuot, sua o day.
+pub(crate) const ANDROID_MAX_CORES: u16 = 16;
+
+/// Cat so nhan xuong nguong kha di cua he dieu hanh ma ho so khai.
+///
+/// CHI macOS co tran. Linux va Windows khong, vi server that dat toi 384 luong
+/// (EPYC 9754 hai socket = 256 nhan / 512 luong) — do 2026-09-19, gia tri `384`
+/// di kem UA Linux voi khoi luong 72,00 va UA Windows 8,00. Cat chung la vut
+/// du lieu hop le.
+///
+/// Con `384` di kem UA macOS voi khoi luong 46,24, va do la du lieu KHONG THE
+/// dung: mot to hop khong ton tai tren doi la mot dau van tay MOI, te hon mot
+/// dau van tay sai.
+///
+/// GOC CAT CO Y, va no co tran: moi ho so macOS vuot 24 deu ve DUNG 24, nen
+/// gia tri 24 bi don cao hon tu nhien. Do la mot dau vet, chi nho hon dau vet
+/// cu (moi thu ve 4). Nang cap khi co ly do that: rut lai tu phan phoi co dieu
+/// kien cua chinh nut do, bo cac gia tri bat kha, thay vi cat cung.
+fn clamp_cores_for_os(cores: u16, os: &OsFamily) -> u16 {
+    match os {
+        OsFamily::MacOs => cores.min(MAC_MAX_CORES),
+        OsFamily::Ios => cores.min(IOS_MAX_CORES),
+        OsFamily::Android => cores.min(ANDROID_MAX_CORES),
+        // Windows va Linux KHONG co tran: server that dat toi hang tram nhan,
+        // va UA khong phan biet duoc may chu voi may ban. Do 2026-09-19 tren
+        // 3000 ho so: Linux max 144, Windows max 640 — ca hai deu ton tai.
+        OsFamily::Windows | OsFamily::Linux | OsFamily::Other(_) => cores,
+    }
+}
+
+/// Parse gia tri cua nut `hardwareConcurrency`.
+fn parse_stringified_hardware_concurrency(raw: &str) -> Option<u16> {
+    parse_stringified::<u16>(raw).or_else(|| raw.parse().ok())
 }
 
 /// Parse gia tri cua nut `maxTouchPoints`.
@@ -191,7 +233,8 @@ pub fn assemble_profile(
 
     let hardware_concurrency = fp
         .get("hardwareConcurrency")
-        .and_then(|v| parse_stringified_u8(v))
+        .and_then(|v| parse_stringified_hardware_concurrency(v))
+        .map(|n| clamp_cores_for_os(n, &os_family))
         .unwrap_or(4);
 
     let device_memory = fp
@@ -533,6 +576,158 @@ mod tests {
             .find(|n| n.name == node_name)
             .unwrap_or_else(|| panic!("mang phai co nut `{node_name}`"));
         node.possible_values.clone()
+    }
+
+    /// Nhu bai tren, cho `hardwareConcurrency` — VEIL-738.
+    ///
+    /// Nut nay nang hon `maxTouchPoints` 150 lan: bon gia tri vuot `u8`
+    /// (384, 448, 512, 640) chiem 26,36% khoi luong xac suat toan mang, va
+    /// 127/479 phan phoi co dieu kien mat hon mot nua khoi luong.
+    ///
+    /// Va no mat THEO KIEU TE HON: `.unwrap_or(4)` bien gia tri that thanh mot
+    /// con so TRONG HOP LY, chu khong thanh `None`. Khong ai phan biet duoc
+    /// "may 4 nhan" voi "gia tri that bi nuot".
+    #[test]
+    fn moi_gia_tri_hardwareconcurrency_trong_mang_deu_doc_lai_duoc() {
+        let values = possible_values_of("hardwareConcurrency");
+
+        assert!(
+            values.len() >= 20,
+            "nut hardwareConcurrency chi co {} gia tri — qua it de bai nay co nghia",
+            values.len()
+        );
+
+        let lost: Vec<&String> = values
+            .iter()
+            .filter(|v| v.as_str() != veilus_fingerprint_data::network::MISSING_VALUE)
+            .filter(|v| parse_stringified_hardware_concurrency(v).is_none())
+            .collect();
+
+        assert!(
+            lost.is_empty(),
+            "mang khai {} gia tri cho hardwareConcurrency nhung {} gia tri khong doc \
+             lai duoc: {:?}",
+            values.len(),
+            lost.len(),
+            lost
+        );
+    }
+
+    /// Ho so macOS khong duoc mang so nhan ma khong may Mac nao co.
+    ///
+    /// BAI NAY CHI CO NGHIA SAU KHI KIEU DA NOI LEN u16. Truoc do, `384` roi
+    /// vao `.unwrap_or(4)` nen khong ho so nao vuot tran — bai se XANH RONG,
+    /// canh mot dieu khong the xay ra. Do la ly do thu tu la: noi kieu truoc,
+    /// xem bai nay DO, roi moi loc.
+    ///
+    /// Tran 24 = Mac Pro M2 Ultra, may nhieu nhan nhat Apple ban. Do 2026-09-19,
+    /// `384` di kem UA macOS voi khoi luong 46,24 — tuc no CO THAT trong du lieu
+    /// va se duoc rut ra neu khong ai chan.
+    #[test]
+    fn he_di_dong_khong_bao_gio_khai_qua_tran_so_nhan_cua_no() {
+        let network = veilus_fingerprint_data::loader::get_fingerprint_network()
+            .expect("mang fingerprint phai nap duoc");
+        let node = network
+            .nodes
+            .iter()
+            .find(|n| n.name == "hardwareConcurrency")
+            .expect("mang phai co nut hardwareConcurrency");
+
+        // Hang doi chung: neu mang khong con gia tri nao > 24 thi bai duoi
+        // khong hoi gi ca, va cho chet phai la O DAY.
+        let tren_tran: Vec<u16> = node
+            .possible_values
+            .iter()
+            .filter_map(|v| parse_stringified_hardware_concurrency(v))
+            .filter(|n| *n > MAC_MAX_CORES)
+            .collect();
+        assert!(
+            !tren_tran.is_empty(),
+            "mang khong con gia tri nao > {MAC_MAX_CORES} — bai nay thanh vo nghia"
+        );
+
+        for (os, tran) in [
+            (OsFamily::MacOs, MAC_MAX_CORES),
+            (OsFamily::Ios, IOS_MAX_CORES),
+            (OsFamily::Android, ANDROID_MAX_CORES),
+        ] {
+            for gia_tri in &tren_tran {
+                let sau_loc = clamp_cores_for_os(*gia_tri, &os);
+                assert!(
+                    sau_loc <= tran,
+                    "ho so {os:?} nhan {gia_tri} nhan sau khi loc con {sau_loc} — vuot tran \
+                     {tran}. Mot to hop khong ton tai tren doi la mot dau van tay MOI."
+                );
+            }
+        }
+    }
+
+    /// DAU-CUOI: sinh ho so that va kiem tran, thay vi goi thang ham loc.
+    ///
+    /// Bai nay bat mot thu ba bai kia KHONG bat duoc: ham loc dung nhung
+    /// KHONG DUOC NOI vao duong sinh. Do 2026-09-19, ban dau tien cua ban sua
+    /// nay chi loc macOS va bai don vi xanh het — chinh phep do dau-cuoi moi
+    /// lo ra iOS con nhan 640 nhan va Android 512.
+    #[test]
+    fn ho_so_sinh_that_khong_he_vuot_tran_cua_he_di_dong() {
+        use crate::FingerprintGenerator;
+
+        let mut seen: std::collections::BTreeMap<String, (u16, usize)> =
+            std::collections::BTreeMap::new();
+        for seed in 0..300u64 {
+            let p = FingerprintGenerator::new()
+                .seeded(seed)
+                .generate()
+                .expect("sinh ho so phai chay");
+            let os = p.operating_system.family.clone();
+            let cores = p.fingerprint.navigator.hardware_concurrency;
+            let e = seen.entry(format!("{os:?}")).or_insert((0, 0));
+            e.0 = e.0.max(cores);
+            e.1 += 1;
+
+            let tran = match os {
+                OsFamily::MacOs => Some(MAC_MAX_CORES),
+                OsFamily::Ios => Some(IOS_MAX_CORES),
+                OsFamily::Android => Some(ANDROID_MAX_CORES),
+                _ => None,
+            };
+            if let Some(t) = tran {
+                assert!(
+                    cores <= t,
+                    "seed {seed}: ho so {os:?} sinh ra {cores} nhan, vuot tran {t}"
+                );
+            }
+        }
+
+        // Hang doi chung: neu lo sinh khong he co ho so di dong nao thi khang
+        // dinh o tren chua bao gio chay, va bai nay xanh rong.
+        let di_dong: usize = seen
+            .iter()
+            .filter(|(k, _)| {
+                k.as_str() == "MacOs" || k.as_str() == "Ios" || k.as_str() == "Android"
+            })
+            .map(|(_, (_, n))| *n)
+            .sum();
+        assert!(
+            di_dong >= 20,
+            "chi {di_dong} ho so macOS/iOS/Android trong 300 seed — qua it de bai nay co nghia; \
+             phan bo: {seen:?}"
+        );
+    }
+
+    /// Chieu nguoc: Linux va Windows KHONG bi cat, vi server that dat toi do.
+    ///
+    /// Thieu bai nay thi mot ban loc "cat het moi thu > 24" cung xanh, va no se
+    /// vut 80 don vi khoi luong hop le cua Linux/Windows.
+    #[test]
+    fn ho_so_linux_va_windows_giu_nguyen_so_nhan_lon() {
+        for os in [OsFamily::Linux, OsFamily::Windows] {
+            assert_eq!(
+                clamp_cores_for_os(384, &os),
+                384,
+                "{os:?} phai giu 384 — server that dat toi do (EPYC hai socket)"
+            );
+        }
     }
 
     /// Moi gia tri mang TU KHAI la co the xay ra thi phai doc lai duoc.

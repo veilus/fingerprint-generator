@@ -2,10 +2,20 @@
 
 ## 0.3.0 — 2026-09-19
 
-**THAY ĐỔI PHÁ VỠ.** `NavigatorFingerprint::max_touch_points` đổi từ
-`Option<u8>` sang `Option<u16>`. Người dùng đang khớp kiểu tường minh (`let x:
-Option<u8> = fp.navigator.max_touch_points;`) phải sửa một dòng; người dùng chỉ
-đọc giá trị thì không phải làm gì.
+**HAI THAY ĐỔI PHÁ VỠ**, gộp một bản có chủ đích để người dùng ngoài chịu đúng
+một lần vỡ thay vì hai:
+
+```
+NavigatorFingerprint::max_touch_points       Option<u8>  ->  Option<u16>
+NavigatorFingerprint::hardware_concurrency           u8  ->          u16
+```
+
+Người dùng khớp kiểu tường minh (`let x: u8 = fp.navigator.hardware_concurrency;`)
+phải sửa một dòng mỗi chỗ; người dùng chỉ đọc giá trị thì không phải làm gì.
+
+Cả hai cùng một gốc: **dữ liệu của chính thư viện không lọt qua kiểu của chính
+nó**, và mất im lặng. Cùng lúc, `hardware_concurrency` nay bị cắt theo hệ điều
+hành — xem mục riêng bên dưới, vì đó là thay đổi HÀNH VI chứ không chỉ kiểu.
 
 ### Vì sao đổi: dữ liệu của chính thư viện không lọt qua kiểu của chính nó
 
@@ -38,18 +48,67 @@ Nếu viết sau khi sửa thì nó chỉ đang nói `u16` chứa được số 
 ai nghi ngờ. Bài kèm một hàng đối chứng: nút có dưới 5 giá trị thì bài tự đỏ,
 để việc thu gọn dữ liệu không âm thầm làm nó vô nghĩa.
 
+### `hardwareConcurrency` — cùng lớp lỗi, nặng hơn 150 lần (VEIL-738)
+
+`NavigatorFingerprint::hardware_concurrency` đổi từ `u8` sang `u16`. Bốn giá trị
+của mạng vượt `u8` (384, 448, 512, 640) chiếm **26,36%** khối lượng xác suất
+toàn mạng, và chúng rơi vào `.unwrap_or(4)` — tức mất thành một con số **trông
+hợp lý**, không phân biệt được với một máy 4 nhân thật.
+
+Nhưng nới kiểu một mình là **sai**, và phép đo nói rõ vì sao. Với mỗi giá trị
+vượt `u8`, hệ điều hành của UA đi kèm:
+
+```
+384   Linux=72.00   macOS=46.24   Windows=8.00
+448/512/640         ~0.04 tong cong — gan nhu khong ton tai
+```
+
+384 luồng trên server Linux là **có thật** (EPYC 9754 hai socket = 256 nhân /
+512 luồng). 384 nhân trên một máy Mac thì **không tồn tại**. Nên phát nguyên giá
+trị sẽ tạo một dấu vân tay MỚI, tệ hơn dấu vân tay sai nó đang thay.
+
+Cách chọn: nới kiểu **và** cắt theo hệ điều hành mà hồ sơ khai.
+
+```
+macOS     24   Mac Pro M2 Ultra
+iOS       10   iPad Pro M4
+Android   16   TRAN CO BIEN, khong phai so nhan cua mot may cu the
+Windows        khong cat — server that dat toi hang tram nhan
+Linux          khong cat — cung ly do
+```
+
+**Điều này cũng đổi hành vi có sẵn, không chỉ khôi phục dữ liệu mất.** Trước bản
+này, hồ sơ iOS và Android đã nhận tới 186–192 nhân, vì `u8` cho lọt mọi giá trị
+25–255. Nới kiểu chỉ **phơi ra** lỗi khả dĩ đó chứ không tạo ra nó. Đo trên 3000
+hồ sơ, trước và sau:
+
+```
+           truoc              sau
+Ios        max 640, 20.4% >24    max 10
+Android    max 512, 19.0% >24    max 16
+MacOs      max 384                max 24
+Linux      max 144                max 144   khong doi
+Windows    max 640                max 640   khong doi
+```
+
+**Góc cắt có ý, kèm trần:** mọi hồ sơ macOS vượt 24 đều về **đúng** 24, nên giá
+trị 24 bị dồn cao hơn tự nhiên. Đó vẫn là một dấu vết — chỉ nhỏ hơn dấu vết cũ
+(mọi thứ về 4). Nâng cấp khi có lý do thật: rút lại từ phân phối có điều kiện
+của chính nút đó thay vì cắt cứng.
+
+**Ba bài mới, hai trong số đó chạy ở trạng thái ĐỎ trước khi sửa.** Bài thứ ba
+là bài **đầu-cuối** — sinh hồ sơ thật rồi kiểm trần — và nó tồn tại vì một lý do
+đo được: bản sửa đầu tiên chỉ lọc macOS, **mọi bài đơn vị đều xanh**, và chính
+phép đo đầu-cuối mới lộ ra iOS còn nhận 640 nhân. Đột biến xác nhận khoảng mù
+đó: gỡ lời gọi lọc khỏi đường sinh mà giữ nguyên hàm → bài đơn vị **vẫn xanh**,
+chỉ bài đầu-cuối đỏ.
+
 ### Thứ bản này KHÔNG sửa
 
-`hardwareConcurrency` mang **cùng lớp lỗi và nặng hơn 150 lần**: 4 giá trị của
-nó vượt `u8` (384, 448, 512, 640), chiếm **26,4%** khối lượng xác suất toàn
-mạng, và 127/479 phân phối có điều kiện mất hơn một nửa khối lượng. Nó còn tệ
-hơn ở chỗ mất thành `.unwrap_or(4)` — một con số **trông hợp lý** — chứ không
-thành `None`.
-
-Không gộp vào bản này vì nó đặt ra một câu hỏi mà `maxTouchPoints` không đặt:
-`384` nhân cho một UA **Macintosh** là giá trị không tồn tại trên đời, nên nới
-kiểu để phát nó ra có thể tạo một dấu vân tay MỚI thay vì sửa một dấu vân tay
-sai. Đó là quyết định về dữ liệu, không phải về kiểu.
+`tools/fingerprint-parity/README.md` ghi phép kiểm *"Cores and RAM plausible
+together"* trượt **25,3%**, quy nguyên nhân cho lệch niên đại dữ liệu. Con số đó
+nằm sát **26,36%** đo được ở đây. Chưa kiểm hai cái có phải một; nếu đúng thì
+chẩn đoán cũ đang chỉ sai chỗ.
 
 ## 0.2.4 — 2026-09-17
 
